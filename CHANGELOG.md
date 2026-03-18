@@ -1,3 +1,9 @@
+## [1.21.0](https://github.com/pynickle/chat-summarizer/compare/v1.20.3...v1.21.0) (2026-03-18)
+
+### ✨ Features
+
+* support private s3 ([d961230](https://github.com/pynickle/chat-summarizer/commit/d9612301e539e3826f5a063ca016016588b58cef))
+
 ## [1.20.3](https://github.com/pynickle/chat-summarizer/compare/v1.20.2...v1.20.3) (2026-03-18)
 
 ### 🐛 Bug Fixes

@@ -1,3 +1,9 @@
+## [1.20.1](https://github.com/pynickle/chat-summarizer/compare/v1.20.0...v1.20.1) (2026-03-18)
+
+### 🐛 Bug Fixes
+
+* fix repo url ([fdfc819](https://github.com/pynickle/chat-summarizer/commit/fdfc8191c37eb4a848c5362f6ebfeadc3447ae00))
+
 ## [1.1.0](https://github.com/pynickle/chat-summarizer/compare/v1.0.0...v1.1.0) (2026-03-18)
 
 ### ✨ Features

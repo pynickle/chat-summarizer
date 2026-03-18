@@ -1228,7 +1228,9 @@ export class CommandHandler {
         if (analyzeMessage && analyzeMessage[0]) {
           await session.bot.deleteMessage(session.channelId, analyzeMessage[0]);
         }
-        await this.sendMessage(session, [h.text(`❌ AI 分析失败：${error?.message || '未知错误'}`)]);
+        await this.sendMessage(session, [
+          h.text(`❌ AI 分析失败：${error?.message || '未知错误'}`),
+        ]);
       }
     } catch (error: any) {
       console.error('处理分析命令失败：', error);

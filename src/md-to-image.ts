@@ -1,13 +1,13 @@
-import { Context, Logger } from 'koishi'
-import { readFileSync } from 'fs'
+import { Context, Logger } from 'koishi';
+import { readFileSync } from 'fs';
 
 export class MarkdownToImageService {
-  private logger: Logger
-  private isRendering: boolean = false
-  private renderQueue: Array<() => Promise<void>> = []
+  private logger: Logger;
+  private isRendering: boolean = false;
+  private renderQueue: Array<() => Promise<void>> = [];
 
   constructor(private ctx: Context) {
-    this.logger = ctx.logger('chat-summarizer:md-to-image')
+    this.logger = ctx.logger('chat-summarizer:md-to-image');
   }
 
   /**
@@ -15,36 +15,36 @@ export class MarkdownToImageService {
    */
   private async waitForRenderSlot(): Promise<void> {
     if (!this.isRendering) {
-      this.isRendering = true
-      return
+      this.isRendering = true;
+      return;
     }
 
     // 如果正在渲染，加入队列等待
-    this.logger.info('渲染进程繁忙，加入等待队列...')
+    this.logger.info('渲染进程繁忙，加入等待队列...');
     return new Promise((resolve) => {
       this.renderQueue.push(async () => {
-        this.isRendering = true
-        resolve()
-      })
-    })
+        this.isRendering = true;
+        resolve();
+      });
+    });
   }
 
   /**
    * 释放渲染槽位
    */
   private releaseRenderSlot(): void {
-    this.isRendering = false
+    this.isRendering = false;
 
     // 处理队列中的下一个任务
-    const nextTask = this.renderQueue.shift()
+    const nextTask = this.renderQueue.shift();
     if (nextTask) {
-      this.logger.info('处理队列中的下一个渲染任务')
-      nextTask()
+      this.logger.info('处理队列中的下一个渲染任务');
+      nextTask();
     }
   }
 
   /**
-   * 生成字体CSS - 使用 Google Fonts CDN
+   * 生成字体 CSS - 使用 Google Fonts CDN
    */
   private generateFontCSS(): string {
     return `
@@ -52,7 +52,7 @@ export class MarkdownToImageService {
       @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
 
-      /* Emoji图片样式 */
+      /* Emoji 图片样式 */
       .emoji {
         display: inline-block;
         width: 1.2em;
@@ -62,124 +62,137 @@ export class MarkdownToImageService {
         object-fit: contain;
       }
 
-      /* 确保emoji文本有正确的字体回退 */
+      /* 确保 emoji 文本有正确的字体回退 */
       .emoji-text, span:has(> .emoji) {
         font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif;
       }
-    `
+    `;
   }
 
   /**
-   * 将文本中的emoji转换为图片标签
+   * 将文本中的 emoji 转换为图片标签
    */
   private convertEmojiToImages(html: string): string {
-    // 使用BootCDN emoji图片 - 国内访问更稳定
-    const emojiBaseUrl = 'https://cdn.bootcdn.net/ajax/libs/twemoji/16.0.1/72x72/'
+    // 使用 BootCDN emoji 图片 - 国内访问更稳定
+    const emojiBaseUrl = 'https://cdn.bootcdn.net/ajax/libs/twemoji/16.0.1/72x72/';
 
-    // 使用更完整的Unicode范围匹配emoji
-    const emojiRegex = /(?:[\u2600-\u26FF\u2700-\u27BF]|(?:\uD83C[\uDF00-\uDFFF])|(?:\uD83D[\uDC00-\uDE4F])|(?:\uD83D[\uDE80-\uDEFF])|(?:\uD83E[\uDD00-\uDDFF])|(?:\uD83E[\uDE00-\uDEFF])|(?:\uD83C[\uDDE6-\uDDFF])|(?:\uD83C[\uDDF0-\uDDFF])|[\u23E9-\u23F3\u23F8-\u23FA\u2600-\u2604\u260E\u2611\u2614-\u2615\u2618\u261D\u2620\u2622-\u2623\u2626\u262A\u262E-\u262F\u2638-\u263A\u2640\u2642\u2648-\u2653\u2660\u2663\u2665-\u2666\u2668\u267B\u267F\u2692-\u2697\u2699\u269B-\u269C\u26A0-\u26A1\u26AA-\u26AB\u26B0-\u26B1\u26BD-\u26BE\u26C4-\u26C5\u26C8\u26CE-\u26CF\u26D1\u26D3-\u26D4\u26E9-\u26EA\u26F0-\u26F5\u26F7-\u26FA\u26FD\u2702\u2705\u2708-\u270D\u270F\u2712\u2714\u2716\u271D\u2721\u2728\u2733-\u2734\u2744\u2747\u274C\u274E\u2753-\u2755\u2757\u2763-\u2764\u2795-\u2797\u27A1\u27B0\u27BF\u2934-\u2935\u2B05-\u2B07\u2B1B-\u2B1C\u2B50\u2B55\u3030\u303D\u3297\u3299]|(?:\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62(?:\uDB40\uDC77\uDB40\uDC6C\uDB40\uDC73|\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74|\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67)\uDB40\uDC7F))/g
+    // 使用更完整的 Unicode 范围匹配 emoji
+    const emojiRegex =
+      /(?:[\u2600-\u26FF\u2700-\u27BF]|(?:\uD83C[\uDF00-\uDFFF])|(?:\uD83D[\uDC00-\uDE4F])|(?:\uD83D[\uDE80-\uDEFF])|(?:\uD83E[\uDD00-\uDDFF])|(?:\uD83E[\uDE00-\uDEFF])|(?:\uD83C[\uDDE6-\uDDFF])|(?:\uD83C[\uDDF0-\uDDFF])|[\u23E9-\u23F3\u23F8-\u23FA\u2600-\u2604\u260E\u2611\u2614-\u2615\u2618\u261D\u2620\u2622-\u2623\u2626\u262A\u262E-\u262F\u2638-\u263A\u2640\u2642\u2648-\u2653\u2660\u2663\u2665-\u2666\u2668\u267B\u267F\u2692-\u2697\u2699\u269B-\u269C\u26A0-\u26A1\u26AA-\u26AB\u26B0-\u26B1\u26BD-\u26BE\u26C4-\u26C5\u26C8\u26CE-\u26CF\u26D1\u26D3-\u26D4\u26E9-\u26EA\u26F0-\u26F5\u26F7-\u26FA\u26FD\u2702\u2705\u2708-\u270D\u270F\u2712\u2714\u2716\u271D\u2721\u2728\u2733-\u2734\u2744\u2747\u274C\u274E\u2753-\u2755\u2757\u2763-\u2764\u2795-\u2797\u27A1\u27B0\u27BF\u2934-\u2935\u2B05-\u2B07\u2B1B-\u2B1C\u2B50\u2B55\u3030\u303D\u3297\u3299]|(?:\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62(?:\uDB40\uDC77\uDB40\uDC6C\uDB40\uDC73|\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74|\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67)\uDB40\uDC7F))/g;
 
-    let convertedCount = 0
+    let convertedCount = 0;
     const result = html.replace(emojiRegex, (match) => {
       try {
-        // 将emoji转换为Unicode码点
-        const codePoint = this.getEmojiCodePoint(match)
+        // 将 emoji 转换为 Unicode 码点
+        const codePoint = this.getEmojiCodePoint(match);
         if (codePoint) {
-          convertedCount++
-          // 简化处理，只转义基本字符，使用简单的onerror fallback
+          convertedCount++;
+          // 简化处理，只转义基本字符，使用简单的 onerror fallback
           const escapedMatch = match.replace(/["'<>&]/g, (char) => {
             switch (char) {
-              case '"': return '&quot;'
-              case "'": return '&#39;'
-              case '<': return '&lt;'
-              case '>': return '&gt;'
-              case '&': return '&amp;'
-              default: return char
+              case '"':
+                return '&quot;';
+              case "'":
+                return '&#39;';
+              case '<':
+                return '&lt;';
+              case '>':
+                return '&gt;';
+              case '&':
+                return '&amp;';
+              default:
+                return char;
             }
-          })
-          return `<img class="emoji" src="${emojiBaseUrl}${codePoint}.png" alt="${escapedMatch}" loading="eager" onerror="this.style.display='none'">`
+          });
+          return `<img class="emoji" src="${emojiBaseUrl}${codePoint}.png" alt="${escapedMatch}" loading="eager" onerror="this.style.display='none'">`;
         }
-        return match
+        return match;
       } catch (error) {
-        this.logger.debug(`无法转换emoji: ${match}`, error)
-        return match
+        this.logger.debug(`无法转换 emoji: ${match}`, error);
+        return match;
       }
-    })
+    });
 
-    this.logger.info(`🖼️ 动态转换了${convertedCount}个emoji为CDN图片`)
+    this.logger.info(`🖼️ 动态转换了${convertedCount}个 emoji 为 CDN 图片`);
 
-    return result
+    return result;
   }
 
   /**
-   * 获取emoji的Unicode码点
+   * 获取 emoji 的 Unicode 码点
    */
   private getEmojiCodePoint(emoji: string): string | null {
     try {
-      const codePoints = []
-      let i = 0
+      const codePoints = [];
+      let i = 0;
 
       while (i < emoji.length) {
-        const code = emoji.codePointAt(i)
+        const code = emoji.codePointAt(i);
         if (code) {
           // 过滤掉变体选择器（U+FE0F）和其他修饰符
-          if (code !== 0xFE0F && code !== 0x200D) {
-            codePoints.push(code.toString(16))
+          if (code !== 0xfe0f && code !== 0x200d) {
+            codePoints.push(code.toString(16));
           }
 
           // 如果是代理对，跳过下一个字符
-          if (code > 0xFFFF) {
-            i += 2
+          if (code > 0xffff) {
+            i += 2;
           } else {
-            i += 1
+            i += 1;
           }
         } else {
-          i += 1
+          i += 1;
         }
       }
 
-      // 对于某些特殊emoji，可能需要特殊处理
-      let result = codePoints.join('-')
+      // 对于某些特殊 emoji，可能需要特殊处理
+      let result = codePoints.join('-');
 
-      // 处理一些特殊情况，如带有肤色修饰符的emoji
-      if (result.includes('1f3fb') || result.includes('1f3fc') || result.includes('1f3fd') || result.includes('1f3fe') || result.includes('1f3ff')) {
-        // 对于带有肤色修饰符的emoji，保留第一个码点
-        result = codePoints[0]
+      // 处理一些特殊情况，如带有肤色修饰符的 emoji
+      if (
+        result.includes('1f3fb') ||
+        result.includes('1f3fc') ||
+        result.includes('1f3fd') ||
+        result.includes('1f3fe') ||
+        result.includes('1f3ff')
+      ) {
+        // 对于带有肤色修饰符的 emoji，保留第一个码点
+        result = codePoints[0];
       }
 
-      return result.length > 0 ? result : null
+      return result.length > 0 ? result : null;
     } catch (error) {
-      this.logger.debug(`获取emoji码点失败: ${emoji}`, error)
-      return null
+      this.logger.debug(`获取 emoji 码点失败：${emoji}`, error);
+      return null;
     }
   }
 
   /**
-   * 将markdown内容转换为图片
+   * 将 markdown 内容转换为图片
    */
   async convertToImage(markdownContent: string): Promise<Buffer> {
-    const startTime = Date.now()
+    const startTime = Date.now();
 
     // 等待渲染槽位，避免并发渲染影响性能
-    await this.waitForRenderSlot()
+    await this.waitForRenderSlot();
 
-    this.logger.info('开始图片渲染，队列等待时间:', Date.now() - startTime, 'ms')
+    this.logger.info('开始图片渲染，队列等待时间：', Date.now() - startTime, 'ms');
 
-    // 获取puppeteer服务
-    const puppeteer = (this.ctx as any).puppeteer
+    // 获取 puppeteer 服务
+    const puppeteer = (this.ctx as any).puppeteer;
 
-    // 获取GitHub markdown CSS
-    const githubCssPath = require.resolve('github-markdown-css/github-markdown.css')
-    const githubCss = readFileSync(githubCssPath, 'utf-8')
+    // 获取 GitHub markdown CSS
+    const githubCssPath = require.resolve('github-markdown-css/github-markdown.css');
+    const githubCss = readFileSync(githubCssPath, 'utf-8');
 
-    // 生成字体CSS
-    const fontCss = this.generateFontCSS()
+    // 生成字体 CSS
+    const fontCss = this.generateFontCSS();
 
-    // 将markdown转换为HTML并处理emoji
-    const htmlContent = this.markdownToHtml(markdownContent)
-    const htmlWithEmoji = this.convertEmojiToImages(htmlContent)
+    // 将 markdown 转换为 HTML 并处理 emoji
+    const htmlContent = this.markdownToHtml(markdownContent);
+    const htmlWithEmoji = this.convertEmojiToImages(htmlContent);
 
-    // 创建HTML模板
+    // 创建 HTML 模板
     const html = `
       <!DOCTYPE html>
       <html>
@@ -268,92 +281,92 @@ export class MarkdownToImageService {
         </div>
       </body>
       </html>
-    `
+    `;
 
     try {
-      // 使用Koishi的puppeteer服务渲染页面
+      // 使用 Koishi 的 puppeteer 服务渲染页面
       const imageBuffer = await puppeteer.render(html, async (page, next) => {
         // 设置视口
         await page.setViewport({
           width: 1200,
           height: 1000,
-          deviceScaleFactor: 2
-        })
+          deviceScaleFactor: 2,
+        });
 
         // 等待页面加载完成
-        await page.waitForSelector('.markdown-body')
+        await page.waitForSelector('.markdown-body');
 
-        // 等待字体和emoji图片加载完成
-        this.logger.info('等待字体和emoji图片加载完成...')
+        // 等待字体和 emoji 图片加载完成
+        this.logger.info('等待字体和 emoji 图片加载完成...');
 
         await page.evaluate(() => {
           return new Promise((resolve) => {
             // 等待字体加载
             if (document.fonts && document.fonts.ready) {
               document.fonts.ready.then(() => {
-                console.log('字体加载完成')
-              })
+                console.log('字体加载完成');
+              });
             }
 
-            const emojiImages = document.querySelectorAll('img.emoji')
-            let loadedCount = 0
-            const totalImages = emojiImages.length
+            const emojiImages = document.querySelectorAll('img.emoji');
+            let loadedCount = 0;
+            const totalImages = emojiImages.length;
 
             if (totalImages === 0) {
-              console.log('没有找到emoji图片')
-              resolve(undefined)
-              return
+              console.log('没有找到 emoji 图片');
+              resolve(undefined);
+              return;
             }
 
-            console.log(`找到${totalImages}个emoji图片，开始加载`)
+            console.log(`找到${totalImages}个 emoji 图片，开始加载`);
 
             const checkAllLoaded = () => {
-              loadedCount++
-              console.log(`emoji图片加载进度: ${loadedCount}/${totalImages}`)
+              loadedCount++;
+              console.log(`emoji 图片加载进度：${loadedCount}/${totalImages}`);
 
               if (loadedCount >= totalImages) {
-                console.log('✅ 所有emoji图片加载完成')
-                resolve(undefined)
+                console.log('✅ 所有 emoji 图片加载完成');
+                resolve(undefined);
               }
-            }
+            };
 
             emojiImages.forEach((img) => {
-              const image = img as HTMLImageElement
+              const image = img as HTMLImageElement;
               if (image.complete) {
-                checkAllLoaded()
+                checkAllLoaded();
               } else {
-                image.onload = checkAllLoaded
+                image.onload = checkAllLoaded;
                 image.onerror = () => {
-                  console.log(`⚠️ emoji图片加载失败: ${image.src}`)
-                  checkAllLoaded()
-                }
+                  console.log(`⚠️ emoji 图片加载失败：${image.src}`);
+                  checkAllLoaded();
+                };
               }
-            })
+            });
 
             // 设置超时，避免无限等待
             setTimeout(() => {
               if (loadedCount < totalImages) {
-                console.log(`⏰ emoji图片加载超时，已加载${loadedCount}/${totalImages}`)
+                console.log(`⏰ emoji图片加载超时，已加载${loadedCount}/${totalImages}`);
               }
-              resolve(undefined)
-            }, 5000)
-          })
-        })
+              resolve(undefined);
+            }, 5000);
+          });
+        });
 
-        this.logger.info('资源加载完成')
+        this.logger.info('资源加载完成');
 
         // 额外等待确保渲染完成
-        await new Promise(resolve => setTimeout(resolve, 500))
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
         // 获取内容区域并截图
-        const element = await page.$('.markdown-body')
+        const element = await page.$('.markdown-body');
         if (!element) {
-          throw new Error('无法找到内容区域')
+          throw new Error('无法找到内容区域');
         }
 
-        const boundingBox = await element.boundingBox()
+        const boundingBox = await element.boundingBox();
         if (!boundingBox) {
-          throw new Error('无法获取内容区域尺寸')
+          throw new Error('无法获取内容区域尺寸');
         }
 
         const screenshot = await page.screenshot({
@@ -363,33 +376,32 @@ export class MarkdownToImageService {
             x: Math.max(0, boundingBox.x - 20),
             y: Math.max(0, boundingBox.y - 20),
             width: boundingBox.width + 40,
-            height: boundingBox.height + 40
-          }
-        })
+            height: boundingBox.height + 40,
+          },
+        });
 
-        return screenshot
-      })
+        return screenshot;
+      });
 
-      const totalTime = Date.now() - startTime
-      this.logger.info('Markdown转图片成功', {
+      const totalTime = Date.now() - startTime;
+      this.logger.info('Markdown 转图片成功', {
         contentLength: markdownContent.length,
         imageSize: imageBuffer.length,
-        renderTime: totalTime + 'ms'
-      })
+        renderTime: totalTime + 'ms',
+      });
 
-      return Buffer.from(imageBuffer, 'base64')
-
+      return Buffer.from(imageBuffer, 'base64');
     } catch (error) {
-      this.logger.error('Markdown转图片失败', error)
-      throw error
+      this.logger.error('Markdown 转图片失败', error);
+      throw error;
     } finally {
       // 释放渲染槽位，允许其他渲染任务继续
-      this.releaseRenderSlot()
+      this.releaseRenderSlot();
     }
   }
 
   /**
-   * 简单的markdown到HTML转换
+   * 简单的 markdown 到 HTML 转换
    */
   private markdownToHtml(markdown: string): string {
     const result = markdown
@@ -406,8 +418,8 @@ export class MarkdownToImageService {
 
       // 代码块
       .replace(/```[\s\S]*?```/g, (match) => {
-        const code = match.replace(/```/g, '').trim()
-        return `<pre><code>${code}</code></pre>`
+        const code = match.replace(/```/g, '').trim();
+        return `<pre><code>${code}</code></pre>`;
       })
 
       // 行内代码
@@ -433,8 +445,8 @@ export class MarkdownToImageService {
 
       // 清理空段落
       .replace(/<p><\/p>/g, '')
-      .replace(/<p>(<[^>]+>)<\/p>/g, '$1')
+      .replace(/<p>(<[^>]+>)<\/p>/g, '$1');
 
-    return result
+    return result;
   }
 }

@@ -1,13 +1,13 @@
-import { Context, Logger } from 'koishi'
-import { DailyReport, AISummaryOutput, InteractionStatistics } from './types'
+import { Context, Logger } from 'koishi';
+import { DailyReport, AISummaryOutput, InteractionStatistics } from './types';
 
 export class CardRenderer {
-  private logger: Logger
-  private isRendering: boolean = false
-  private renderQueue: Array<() => Promise<void>> = []
+  private logger: Logger;
+  private isRendering: boolean = false;
+  private renderQueue: Array<() => Promise<void>> = [];
 
   constructor(private ctx: Context) {
-    this.logger = ctx.logger('chat-summarizer:card-renderer')
+    this.logger = ctx.logger('chat-summarizer:card-renderer');
   }
 
   /**
@@ -15,28 +15,28 @@ export class CardRenderer {
    */
   private async waitForRenderSlot(): Promise<void> {
     if (!this.isRendering) {
-      this.isRendering = true
-      return
+      this.isRendering = true;
+      return;
     }
 
-    this.logger.info('渲染进程繁忙，加入等待队列...')
+    this.logger.info('渲染进程繁忙，加入等待队列...');
     return new Promise((resolve) => {
       this.renderQueue.push(async () => {
-        this.isRendering = true
-        resolve()
-      })
-    })
+        this.isRendering = true;
+        resolve();
+      });
+    });
   }
 
   /**
    * 释放渲染槽位
    */
   private releaseRenderSlot(): void {
-    this.isRendering = false
-    const nextTask = this.renderQueue.shift()
+    this.isRendering = false;
+    const nextTask = this.renderQueue.shift();
     if (nextTask) {
-      this.logger.info('处理队列中的下一个渲染任务')
-      nextTask()
+      this.logger.info('处理队列中的下一个渲染任务');
+      nextTask();
     }
   }
 
@@ -44,64 +44,64 @@ export class CardRenderer {
    * 渲染完整的群日报
    */
   async renderDailyReport(report: DailyReport): Promise<Buffer> {
-    const startTime = Date.now()
+    const startTime = Date.now();
 
-    await this.waitForRenderSlot()
-    this.logger.info('开始渲染群日报卡片')
+    await this.waitForRenderSlot();
+    this.logger.info('开始渲染群日报卡片');
 
     try {
-      const html = this.generateHTML(report)
-      const puppeteer = (this.ctx as any).puppeteer
+      const html = this.generateHTML(report);
+      const puppeteer = (this.ctx as any).puppeteer;
 
       const imageBuffer = await puppeteer.render(html, async (page, next) => {
         await page.setViewport({
           width: 800,
           height: 1000,
-          deviceScaleFactor: 2
-        })
+          deviceScaleFactor: 2,
+        });
 
-        await page.waitForSelector('.daily-report-container')
+        await page.waitForSelector('.daily-report-container');
 
         // 等待图片加载
         await page.evaluate(() => {
           return new Promise((resolve) => {
-            const images = document.querySelectorAll('img')
-            let loaded = 0
-            const total = images.length
+            const images = document.querySelectorAll('img');
+            let loaded = 0;
+            const total = images.length;
 
             if (total === 0) {
-              resolve(undefined)
-              return
+              resolve(undefined);
+              return;
             }
 
             const checkDone = () => {
-              loaded++
-              if (loaded >= total) resolve(undefined)
-            }
+              loaded++;
+              if (loaded >= total) resolve(undefined);
+            };
 
             images.forEach((img) => {
               if (img.complete) {
-                checkDone()
+                checkDone();
               } else {
-                img.onload = checkDone
-                img.onerror = checkDone
+                img.onload = checkDone;
+                img.onerror = checkDone;
               }
-            })
+            });
 
-            setTimeout(() => resolve(undefined), 5000)
-          })
-        })
+            setTimeout(() => resolve(undefined), 5000);
+          });
+        });
 
-        await new Promise(resolve => setTimeout(resolve, 300))
+        await new Promise((resolve) => setTimeout(resolve, 300));
 
-        const element = await page.$('.daily-report-container')
+        const element = await page.$('.daily-report-container');
         if (!element) {
-          throw new Error('无法找到报告容器')
+          throw new Error('无法找到报告容器');
         }
 
-        const boundingBox = await element.boundingBox()
+        const boundingBox = await element.boundingBox();
         if (!boundingBox) {
-          throw new Error('无法获取容器尺寸')
+          throw new Error('无法获取容器尺寸');
         }
 
         const screenshot = await page.screenshot({
@@ -111,22 +111,22 @@ export class CardRenderer {
             x: Math.max(0, boundingBox.x),
             y: Math.max(0, boundingBox.y),
             width: boundingBox.width,
-            height: boundingBox.height
-          }
-        })
+            height: boundingBox.height,
+          },
+        });
 
-        return screenshot
-      })
+        return screenshot;
+      });
 
-      const totalTime = Date.now() - startTime
-      this.logger.info('群日报渲染成功', { renderTime: totalTime + 'ms' })
+      const totalTime = Date.now() - startTime;
+      this.logger.info('群日报渲染成功', { renderTime: totalTime + 'ms' });
 
-      return Buffer.from(imageBuffer, 'base64')
+      return Buffer.from(imageBuffer, 'base64');
     } catch (error) {
-      this.logger.error('群日报渲染失败', error)
-      throw error
+      this.logger.error('群日报渲染失败', error);
+      throw error;
     } finally {
-      this.releaseRenderSlot()
+      this.releaseRenderSlot();
     }
   }
 
@@ -134,15 +134,15 @@ export class CardRenderer {
    * 生成完整的 HTML
    */
   private generateHTML(report: DailyReport): string {
-    const styles = this.getStyles()
-    const headerCard = this.renderHeaderCard(report)
-    const summaryCard = this.renderSummaryCard(report.aiContent)
-    const hotTopicsCard = this.renderHotTopicsCard(report.aiContent.hotTopics)
-    const importantInfoCard = this.renderImportantInfoCard(report.aiContent.importantInfo)
-    const quotesCard = this.renderQuotesCard(report.aiContent.quotes)
-    const activityRankingCard = this.renderActivityRankingCard(report.statistics)
-    const hourlyDistributionCard = this.renderHourlyDistributionCard(report.statistics)
-    const interactionsCard = this.renderInteractionsCard(report.statistics.interactions)
+    const styles = this.getStyles();
+    const headerCard = this.renderHeaderCard(report);
+    const summaryCard = this.renderSummaryCard(report.aiContent);
+    const hotTopicsCard = this.renderHotTopicsCard(report.aiContent.hotTopics);
+    const importantInfoCard = this.renderImportantInfoCard(report.aiContent.importantInfo);
+    const quotesCard = this.renderQuotesCard(report.aiContent.quotes);
+    const activityRankingCard = this.renderActivityRankingCard(report.statistics);
+    const hourlyDistributionCard = this.renderHourlyDistributionCard(report.statistics);
+    const interactionsCard = this.renderInteractionsCard(report.statistics.interactions);
 
     const html = `
       <!DOCTYPE html>
@@ -168,10 +168,10 @@ export class CardRenderer {
         </div>
       </body>
       </html>
-    `
+    `;
 
-    // 将emoji转换为CDN图片
-    return this.convertEmojiToImages(html)
+    // 将 emoji 转换为 CDN 图片
+    return this.convertEmojiToImages(html);
   }
 
   /**
@@ -681,7 +681,7 @@ export class CardRenderer {
         display: none;
       }
 
-      /* Emoji图片样式 */
+      /* Emoji 图片样式 */
       .emoji {
         display: inline-block;
         width: 1.2em;
@@ -700,15 +700,15 @@ export class CardRenderer {
         width: 1em;
         height: 1em;
       }
-    `
+    `;
   }
 
   /**
    * 渲染头部卡片
    */
   private renderHeaderCard(report: DailyReport): string {
-    const stats = report.statistics.basicStats
-    const guildInfo = report.guildId === 'private' ? '私聊记录' : `群 ${report.guildId}`
+    const stats = report.statistics.basicStats;
+    const guildInfo = report.guildId === 'private' ? '私聊记录' : `群 ${report.guildId}`;
 
     return `
       <div class="card header-card">
@@ -729,7 +729,7 @@ export class CardRenderer {
           </div>
         </div>
       </div>
-    `
+    `;
   }
 
   /**
@@ -737,8 +737,11 @@ export class CardRenderer {
    */
   private renderSummaryCard(aiContent: AISummaryOutput): string {
     const highlightsHtml = aiContent.summary.highlights
-      .map(h => `<div class="highlight-item"><span class="highlight-bullet">•</span><span>${this.escapeHtml(h)}</span></div>`)
-      .join('')
+      .map(
+        (h) =>
+          `<div class="highlight-item"><span class="highlight-bullet">•</span><span>${this.escapeHtml(h)}</span></div>`
+      )
+      .join('');
 
     return `
       <div class="card">
@@ -747,7 +750,7 @@ export class CardRenderer {
         <div class="summary-highlights">${highlightsHtml}</div>
         <div class="atmosphere-tag">🎭 ${this.escapeHtml(aiContent.summary.atmosphere)}</div>
       </div>
-    `
+    `;
   }
 
   /**
@@ -755,19 +758,24 @@ export class CardRenderer {
    */
   private renderHotTopicsCard(hotTopics: AISummaryOutput['hotTopics']): string {
     if (!hotTopics || hotTopics.length === 0) {
-      return ''
+      return '';
     }
 
-    const topicsHtml = hotTopics.map(topic => {
-      const heatClass = `heat-${topic.heatLevel}`
-      const heatText = topic.heatLevel === 'high' ? '🔥 热门' :
-                       topic.heatLevel === 'medium' ? '⭐ 活跃' : '💬 一般'
-      const participantsHtml = topic.participants
-        .slice(0, 5)
-        .map(p => `<span class="participant-tag">${this.escapeHtml(p)}</span>`)
-        .join('')
+    const topicsHtml = hotTopics
+      .map((topic) => {
+        const heatClass = `heat-${topic.heatLevel}`;
+        const heatText =
+          topic.heatLevel === 'high'
+            ? '🔥 热门'
+            : topic.heatLevel === 'medium'
+              ? '⭐ 活跃'
+              : '💬 一般';
+        const participantsHtml = topic.participants
+          .slice(0, 5)
+          .map((p) => `<span class="participant-tag">${this.escapeHtml(p)}</span>`)
+          .join('');
 
-      return `
+        return `
         <div class="hot-topic">
           <div class="hot-topic-header">
             <span class="hot-topic-name">${this.escapeHtml(topic.topic)}</span>
@@ -776,15 +784,16 @@ export class CardRenderer {
           <div class="hot-topic-desc">${this.escapeHtml(topic.description)}</div>
           <div class="hot-topic-participants">${participantsHtml}</div>
         </div>
-      `
-    }).join('')
+      `;
+      })
+      .join('');
 
     return `
       <div class="card">
         <div class="card-title"><span class="icon">🔥</span>热点话题</div>
         ${topicsHtml}
       </div>
-    `
+    `;
   }
 
   /**
@@ -792,7 +801,7 @@ export class CardRenderer {
    */
   private renderImportantInfoCard(importantInfo: AISummaryOutput['importantInfo']): string {
     if (!importantInfo || importantInfo.length === 0) {
-      return ''
+      return '';
     }
 
     const typeIcons: Record<string, { icon: string; class: string }> = {
@@ -800,18 +809,21 @@ export class CardRenderer {
       link: { icon: '🔗', class: 'type-link' },
       resource: { icon: '📦', class: 'type-resource' },
       decision: { icon: '✅', class: 'type-decision' },
-      other: { icon: '📌', class: 'type-other' }
-    }
+      other: { icon: '📌', class: 'type-other' },
+    };
 
-    const itemsHtml = importantInfo.map(info => {
-      const typeInfo = typeIcons[info.type] || typeIcons.other
-      const sourceHtml = info.source ? `<div class="info-source">—— ${this.escapeHtml(info.source)}</div>` : ''
-      // 清理内容中的 URL 和图片链接
-      const cleanedContent = this.cleanUrlsAndImages(info.content)
-      // 如果清理后内容为空，跳过这条
-      if (!cleanedContent) return ''
+    const itemsHtml = importantInfo
+      .map((info) => {
+        const typeInfo = typeIcons[info.type] || typeIcons.other;
+        const sourceHtml = info.source
+          ? `<div class="info-source">—— ${this.escapeHtml(info.source)}</div>`
+          : '';
+        // 清理内容中的 URL 和图片链接
+        const cleanedContent = this.cleanUrlsAndImages(info.content);
+        // 如果清理后内容为空，跳过这条
+        if (!cleanedContent) return '';
 
-      return `
+        return `
         <div class="important-item">
           <div class="info-type-icon ${typeInfo.class}">${typeInfo.icon}</div>
           <div class="info-content">
@@ -819,12 +831,14 @@ export class CardRenderer {
             ${sourceHtml}
           </div>
         </div>
-      `
-    }).filter(html => html).join('')
+      `;
+      })
+      .filter((html) => html)
+      .join('');
 
     // 如果所有条目都被过滤掉了，不显示卡片
     if (!itemsHtml) {
-      return ''
+      return '';
     }
 
     return `
@@ -832,7 +846,7 @@ export class CardRenderer {
         <div class="card-title"><span class="icon">📌</span>重要信息</div>
         ${itemsHtml}
       </div>
-    `
+    `;
   }
 
   /**
@@ -840,53 +854,59 @@ export class CardRenderer {
    */
   private renderQuotesCard(quotes: AISummaryOutput['quotes']): string {
     if (!quotes || quotes.length === 0) {
-      return ''
+      return '';
     }
 
-    const quotesHtml = quotes.map(quote => `
+    const quotesHtml = quotes
+      .map(
+        (quote) => `
       <div class="quote-item">
         <span class="quote-mark">"</span>
         <div class="quote-content">${this.escapeHtml(quote.content)}</div>
         <div class="quote-author">—— ${this.escapeHtml(quote.author)}</div>
       </div>
-    `).join('')
+    `
+      )
+      .join('');
 
     return `
       <div class="card">
         <div class="card-title"><span class="icon">💬</span>金句精选</div>
         ${quotesHtml}
       </div>
-    `
+    `;
   }
 
   /**
    * 渲染活跃排行卡片
    */
   private renderActivityRankingCard(statistics: InteractionStatistics): string {
-    const ranking = statistics.activityRanking
+    const ranking = statistics.activityRanking;
     if (!ranking || ranking.length === 0) {
-      return ''
+      return '';
     }
 
-    const maxCount = ranking[0]?.messageCount || 1
+    const maxCount = ranking[0]?.messageCount || 1;
 
-    const rankingsHtml = ranking.slice(0, 10).map(item => {
-      const percentage = Math.round((item.messageCount / maxCount) * 100)
-      let rankClass = 'rank-other'
-      let rankIcon = item.rank.toString()
+    const rankingsHtml = ranking
+      .slice(0, 10)
+      .map((item) => {
+        const percentage = Math.round((item.messageCount / maxCount) * 100);
+        let rankClass = 'rank-other';
+        let rankIcon = item.rank.toString();
 
-      if (item.rank === 1) {
-        rankClass = 'rank-1'
-        rankIcon = '🥇'
-      } else if (item.rank === 2) {
-        rankClass = 'rank-2'
-        rankIcon = '🥈'
-      } else if (item.rank === 3) {
-        rankClass = 'rank-3'
-        rankIcon = '🥉'
-      }
+        if (item.rank === 1) {
+          rankClass = 'rank-1';
+          rankIcon = '🥇';
+        } else if (item.rank === 2) {
+          rankClass = 'rank-2';
+          rankIcon = '🥈';
+        } else if (item.rank === 3) {
+          rankClass = 'rank-3';
+          rankIcon = '🥉';
+        }
 
-      return `
+        return `
         <div class="ranking-item">
           <div class="rank-badge ${rankClass}">${rankIcon}</div>
           <div class="ranking-info">
@@ -897,40 +917,43 @@ export class CardRenderer {
           </div>
           <div class="ranking-count">${item.messageCount} 条</div>
         </div>
-      `
-    }).join('')
+      `;
+      })
+      .join('');
 
     return `
       <div class="card">
         <div class="card-title"><span class="icon">👑</span>活跃排行</div>
         ${rankingsHtml}
       </div>
-    `
+    `;
   }
 
   /**
    * 渲染时段分布卡片
    */
   private renderHourlyDistributionCard(statistics: InteractionStatistics): string {
-    const distribution = statistics.hourlyDistribution
+    const distribution = statistics.hourlyDistribution;
     if (!distribution || distribution.length === 0) {
-      return ''
+      return '';
     }
 
-    const maxCount = Math.max(...distribution.map(d => d.count), 1)
+    const maxCount = Math.max(...distribution.map((d) => d.count), 1);
 
-    const barsHtml = distribution.map(item => {
-      const height = Math.max((item.count / maxCount) * 100, 4)
-      return `<div class="hour-bar" style="height: ${height}%" title="${item.hour}:00 - ${item.count}条"></div>`
-    }).join('')
+    const barsHtml = distribution
+      .map((item) => {
+        const height = Math.max((item.count / maxCount) * 100, 4);
+        return `<div class="hour-bar" style="height: ${height}%" title="${item.hour}:00 - ${item.count}条"></div>`;
+      })
+      .join('');
 
-    const labelsHtml = [0, 6, 12, 18, 23].map(h =>
-      `<span class="hour-label">${h}</span>`
-    ).join('')
+    const labelsHtml = [0, 6, 12, 18, 23]
+      .map((h) => `<span class="hour-label">${h}</span>`)
+      .join('');
 
-    const peakHour = statistics.basicStats.peakHour
-    const peakCount = distribution[peakHour]?.count || 0
-    const period = this.getPeriodDescription(peakHour)
+    const peakHour = statistics.basicStats.peakHour;
+    const peakCount = distribution[peakHour]?.count || 0;
+    const period = this.getPeriodDescription(peakHour);
 
     return `
       <div class="card">
@@ -941,56 +964,66 @@ export class CardRenderer {
           📍 高峰时段：${period} ${peakHour}:00 (${peakCount} 条消息)
         </div>
       </div>
-    `
+    `;
   }
 
   /**
    * 渲染互动关系卡片
    */
   private renderInteractionsCard(interactions: InteractionStatistics['interactions']): string {
-    const hasMentions = interactions.mentions && interactions.mentions.length > 0
-    const hasReplies = interactions.replies && interactions.replies.length > 0
+    const hasMentions = interactions.mentions && interactions.mentions.length > 0;
+    const hasReplies = interactions.replies && interactions.replies.length > 0;
 
     if (!hasMentions && !hasReplies) {
-      return ''
+      return '';
     }
 
-    let contentHtml = ''
+    let contentHtml = '';
 
     if (hasMentions) {
-      const mentionsHtml = interactions.mentions.slice(0, 5).map(item => `
+      const mentionsHtml = interactions.mentions
+        .slice(0, 5)
+        .map(
+          (item) => `
         <div class="interaction-item">
           <span class="interaction-from">${this.escapeHtml(item.from)}</span>
           <span class="interaction-arrow">→</span>
           <span class="interaction-to">@${this.escapeHtml(item.to)}</span>
           <span class="interaction-count">${item.count} 次</span>
         </div>
-      `).join('')
+      `
+        )
+        .join('');
 
       contentHtml += `
         <div class="interaction-section">
           <div class="interaction-title">📣 @提及排行</div>
           ${mentionsHtml}
         </div>
-      `
+      `;
     }
 
     if (hasReplies) {
-      const repliesHtml = interactions.replies.slice(0, 5).map(item => `
+      const repliesHtml = interactions.replies
+        .slice(0, 5)
+        .map(
+          (item) => `
         <div class="interaction-item">
           <span class="interaction-from">${this.escapeHtml(item.from)}</span>
           <span class="interaction-arrow">↩</span>
           <span class="interaction-to">${this.escapeHtml(item.to)}</span>
           <span class="interaction-count">${item.count} 次</span>
         </div>
-      `).join('')
+      `
+        )
+        .join('');
 
       contentHtml += `
         <div class="interaction-section">
           <div class="interaction-title">💬 回复排行</div>
           ${repliesHtml}
         </div>
-      `
+      `;
     }
 
     return `
@@ -998,99 +1031,112 @@ export class CardRenderer {
         <div class="card-title"><span class="icon">🤝</span>互动关系</div>
         ${contentHtml}
       </div>
-    `
+    `;
   }
 
   /**
    * 获取时段描述
    */
   private getPeriodDescription(hour: number): string {
-    if (hour >= 6 && hour < 12) return '上午'
-    if (hour >= 12 && hour < 14) return '中午'
-    if (hour >= 14 && hour < 18) return '下午'
-    if (hour >= 18 && hour < 22) return '晚上'
-    return '深夜'
+    if (hour >= 6 && hour < 12) return '上午';
+    if (hour >= 12 && hour < 14) return '中午';
+    if (hour >= 14 && hour < 18) return '下午';
+    if (hour >= 18 && hour < 22) return '晚上';
+    return '深夜';
   }
 
   /**
    * HTML 转义
    */
   private escapeHtml(text: string): string {
-    if (!text) return ''
+    if (!text) return '';
     return text
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
+      .replace(/'/g, '&#39;');
   }
 
   /**
-   * 将文本中的emoji转换为图片标签
+   * 将文本中的 emoji 转换为图片标签
    */
   private convertEmojiToImages(html: string): string {
-    const emojiBaseUrl = 'https://cdn.bootcdn.net/ajax/libs/twemoji/16.0.1/72x72/'
+    const emojiBaseUrl = 'https://cdn.bootcdn.net/ajax/libs/twemoji/16.0.1/72x72/';
 
-    const emojiRegex = /(?:[\u2600-\u26FF\u2700-\u27BF]|(?:\uD83C[\uDF00-\uDFFF])|(?:\uD83D[\uDC00-\uDE4F])|(?:\uD83D[\uDE80-\uDEFF])|(?:\uD83E[\uDD00-\uDDFF])|(?:\uD83E[\uDE00-\uDEFF])|(?:\uD83C[\uDDE6-\uDDFF])|(?:\uD83C[\uDDF0-\uDDFF])|[\u23E9-\u23F3\u23F8-\u23FA\u2600-\u2604\u260E\u2611\u2614-\u2615\u2618\u261D\u2620\u2622-\u2623\u2626\u262A\u262E-\u262F\u2638-\u263A\u2640\u2642\u2648-\u2653\u2660\u2663\u2665-\u2666\u2668\u267B\u267F\u2692-\u2697\u2699\u269B-\u269C\u26A0-\u26A1\u26AA-\u26AB\u26B0-\u26B1\u26BD-\u26BE\u26C4-\u26C5\u26C8\u26CE-\u26CF\u26D1\u26D3-\u26D4\u26E9-\u26EA\u26F0-\u26F5\u26F7-\u26FA\u26FD\u2702\u2705\u2708-\u270D\u270F\u2712\u2714\u2716\u271D\u2721\u2728\u2733-\u2734\u2744\u2747\u274C\u274E\u2753-\u2755\u2757\u2763-\u2764\u2795-\u2797\u27A1\u27B0\u27BF\u2934-\u2935\u2B05-\u2B07\u2B1B-\u2B1C\u2B50\u2B55\u3030\u303D\u3297\u3299]|(?:\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62(?:\uDB40\uDC77\uDB40\uDC6C\uDB40\uDC73|\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74|\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67)\uDB40\uDC7F))/g
+    const emojiRegex =
+      /(?:[\u2600-\u26FF\u2700-\u27BF]|(?:\uD83C[\uDF00-\uDFFF])|(?:\uD83D[\uDC00-\uDE4F])|(?:\uD83D[\uDE80-\uDEFF])|(?:\uD83E[\uDD00-\uDDFF])|(?:\uD83E[\uDE00-\uDEFF])|(?:\uD83C[\uDDE6-\uDDFF])|(?:\uD83C[\uDDF0-\uDDFF])|[\u23E9-\u23F3\u23F8-\u23FA\u2600-\u2604\u260E\u2611\u2614-\u2615\u2618\u261D\u2620\u2622-\u2623\u2626\u262A\u262E-\u262F\u2638-\u263A\u2640\u2642\u2648-\u2653\u2660\u2663\u2665-\u2666\u2668\u267B\u267F\u2692-\u2697\u2699\u269B-\u269C\u26A0-\u26A1\u26AA-\u26AB\u26B0-\u26B1\u26BD-\u26BE\u26C4-\u26C5\u26C8\u26CE-\u26CF\u26D1\u26D3-\u26D4\u26E9-\u26EA\u26F0-\u26F5\u26F7-\u26FA\u26FD\u2702\u2705\u2708-\u270D\u270F\u2712\u2714\u2716\u271D\u2721\u2728\u2733-\u2734\u2744\u2747\u274C\u274E\u2753-\u2755\u2757\u2763-\u2764\u2795-\u2797\u27A1\u27B0\u27BF\u2934-\u2935\u2B05-\u2B07\u2B1B-\u2B1C\u2B50\u2B55\u3030\u303D\u3297\u3299]|(?:\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62(?:\uDB40\uDC77\uDB40\uDC6C\uDB40\uDC73|\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74|\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67)\uDB40\uDC7F))/g;
 
     const result = html.replace(emojiRegex, (match) => {
       try {
-        const codePoint = this.getEmojiCodePoint(match)
+        const codePoint = this.getEmojiCodePoint(match);
         if (codePoint) {
           const escapedMatch = match.replace(/["'<>&]/g, (char) => {
             switch (char) {
-              case '"': return '&quot;'
-              case "'": return '&#39;'
-              case '<': return '&lt;'
-              case '>': return '&gt;'
-              case '&': return '&amp;'
-              default: return char
+              case '"':
+                return '&quot;';
+              case "'":
+                return '&#39;';
+              case '<':
+                return '&lt;';
+              case '>':
+                return '&gt;';
+              case '&':
+                return '&amp;';
+              default:
+                return char;
             }
-          })
-          return `<img class="emoji" src="${emojiBaseUrl}${codePoint}.png" alt="${escapedMatch}" loading="eager" onerror="this.style.display='none'">`
+          });
+          return `<img class="emoji" src="${emojiBaseUrl}${codePoint}.png" alt="${escapedMatch}" loading="eager" onerror="this.style.display='none'">`;
         }
-        return match
+        return match;
       } catch {
-        return match
+        return match;
       }
-    })
+    });
 
-    return result
+    return result;
   }
 
   /**
-   * 获取emoji的Unicode码点
+   * 获取 emoji 的 Unicode 码点
    */
   private getEmojiCodePoint(emoji: string): string | null {
     try {
-      const codePoints = []
-      let i = 0
+      const codePoints = [];
+      let i = 0;
 
       while (i < emoji.length) {
-        const code = emoji.codePointAt(i)
+        const code = emoji.codePointAt(i);
         if (code) {
-          if (code !== 0xFE0F && code !== 0x200D) {
-            codePoints.push(code.toString(16))
+          if (code !== 0xfe0f && code !== 0x200d) {
+            codePoints.push(code.toString(16));
           }
-          if (code > 0xFFFF) {
-            i += 2
+          if (code > 0xffff) {
+            i += 2;
           } else {
-            i += 1
+            i += 1;
           }
         } else {
-          i += 1
+          i += 1;
         }
       }
 
-      let result = codePoints.join('-')
+      let result = codePoints.join('-');
 
-      if (result.includes('1f3fb') || result.includes('1f3fc') || result.includes('1f3fd') || result.includes('1f3fe') || result.includes('1f3ff')) {
-        result = codePoints[0]
+      if (
+        result.includes('1f3fb') ||
+        result.includes('1f3fc') ||
+        result.includes('1f3fd') ||
+        result.includes('1f3fe') ||
+        result.includes('1f3ff')
+      ) {
+        result = codePoints[0];
       }
 
-      return result.length > 0 ? result : null
+      return result.length > 0 ? result : null;
     } catch {
-      return null
+      return null;
     }
   }
 
@@ -1098,22 +1144,24 @@ export class CardRenderer {
    * 清理文本中的 URL 和图片链接
    */
   private cleanUrlsAndImages(text: string): string {
-    if (!text) return ''
-    return text
-      // 移除 [图片] 标记
-      .replace(/\[图片\]/g, '')
-      // 移除 Markdown 图片语法 ![alt](url)
-      .replace(/!\[.*?\]\(.*?\)/g, '')
-      // 移除 Markdown 链接语法 [text](url) 但保留 text
-      .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-      // 移除独立的 URL（http/https）
-      .replace(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi, '')
-      // 移除类似 <image url="..."> 的标签
-      .replace(/<image[^>]*>/gi, '')
-      // 移除类似 <img src="..."> 的标签
-      .replace(/<img[^>]*>/gi, '')
-      // 清理多余的空白
-      .replace(/\s+/g, ' ')
-      .trim()
+    if (!text) return '';
+    return (
+      text
+        // 移除 [图片] 标记
+        .replace(/\[图片\]/g, '')
+        // 移除 Markdown 图片语法 ![alt](url)
+        .replace(/!\[.*?\]\(.*?\)/g, '')
+        // 移除 Markdown 链接语法 [text](url) 但保留 text
+        .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+        // 移除独立的 URL（http/https）
+        .replace(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi, '')
+        // 移除类似 <image url="..."> 的标签
+        .replace(/<image[^>]*>/gi, '')
+        // 移除类似 <img src="..."> 的标签
+        .replace(/<img[^>]*>/gi, '')
+        // 清理多余的空白
+        .replace(/\s+/g, ' ')
+        .trim()
+    );
   }
 }

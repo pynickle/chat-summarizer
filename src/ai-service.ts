@@ -1,60 +1,62 @@
-import { Context, Logger } from 'koishi'
-import { Config, AISummaryOutput } from './types'
-import { handleError } from './utils'
-import { STRUCTURED_SYSTEM_PROMPT } from './config'
+import { Context, Logger } from 'koishi';
+import { Config, AISummaryOutput } from './types';
+import { handleError } from './utils';
+import { STRUCTURED_SYSTEM_PROMPT } from './config';
 
 export class AIService {
-  private logger: Logger
-  private globalConfig: Config
+  private logger: Logger;
+  private globalConfig: Config;
 
-  constructor(private ctx: Context, config: Config) {
-    this.logger = ctx.logger('chat-summarizer:ai')
-    this.globalConfig = config
+  constructor(
+    private ctx: Context,
+    config: Config
+  ) {
+    this.logger = ctx.logger('chat-summarizer:ai');
+    this.globalConfig = config;
   }
 
   /**
-   * 获取全局AI配置
+   * 获取全局 AI 配置
    */
   private get config(): Config['ai'] {
-    return this.globalConfig.ai
+    return this.globalConfig.ai;
   }
 
   /**
-   * 获取群组专用的AI配置
+   * 获取群组专用的 AI 配置
    */
   private getGroupAIConfig(guildId: string): {
-    systemPrompt?: string
-    userPromptTemplate?: string
-    enabled?: boolean
+    systemPrompt?: string;
+    userPromptTemplate?: string;
+    enabled?: boolean;
   } {
-    const groupConfig = this.globalConfig.monitor.groups.find(
-      group => group.groupId === guildId
-    )
+    const groupConfig = this.globalConfig.monitor.groups.find((group) => group.groupId === guildId);
 
     return {
       systemPrompt: groupConfig?.systemPrompt || this.config.systemPrompt,
       userPromptTemplate: groupConfig?.userPromptTemplate || this.config.userPromptTemplate,
-      enabled: groupConfig?.summaryEnabled !== undefined ? groupConfig.summaryEnabled : this.config.enabled
-    }
+      enabled:
+        groupConfig?.summaryEnabled !== undefined
+          ? groupConfig.summaryEnabled
+          : this.config.enabled,
+    };
   }
 
   /**
-   * 检查AI服务是否已启用并配置正确
+   * 检查 AI 服务是否已启用并配置正确
    */
   isEnabled(guildId?: string): boolean {
-    const globalEnabled = this.config.enabled && 
-                          !!this.config.apiUrl && 
-                          !!this.config.apiKey
-    
-    if (!globalEnabled) return false
-    
-    // 如果提供了群组ID，检查群组专用配置
+    const globalEnabled = this.config.enabled && !!this.config.apiUrl && !!this.config.apiKey;
+
+    if (!globalEnabled) return false;
+
+    // 如果提供了群组 ID，检查群组专用配置
     if (guildId) {
-      const groupConfig = this.getGroupAIConfig(guildId)
-      return groupConfig.enabled !== false // 只有明确设置为false才禁用
+      const groupConfig = this.getGroupAIConfig(guildId);
+      return groupConfig.enabled !== false; // 只有明确设置为 false 才禁用
     }
-    
-    return true
+
+    return true;
   }
 
   /**
@@ -62,16 +64,16 @@ export class AIService {
    */
   private replaceTemplate(template: string, variables: Record<string, string>): string {
     return template.replace(/\{(\w+)\}/g, (match, key) => {
-      return variables[key] || match
-    })
+      return variables[key] || match;
+    });
   }
 
   /**
    * 获取群组信息描述
    */
   private getGroupInfo(guildId: string): string {
-    if (guildId === 'private') return '私聊记录'
-    return `群组 ${guildId}`
+    if (guildId === 'private') return '私聊记录';
+    return `群组 ${guildId}`;
   }
 
   /**
@@ -83,216 +85,223 @@ export class AIService {
     messageCount: number,
     guildId: string
   ): Promise<string> {
-    // 检查群组级别的AI启用状态
+    // 检查群组级别的 AI 启用状态
     if (!this.isEnabled(guildId)) {
-      throw new Error('AI总结功能未启用或该群组已禁用AI功能')
+      throw new Error('AI 总结功能未启用或该群组已禁用 AI 功能');
     }
 
     if (!this.config.apiUrl || !this.config.apiKey) {
-      throw new Error('AI配置不完整，请检查API URL和密钥')
+      throw new Error('AI 配置不完整，请检查 API URL 和密钥');
     }
 
     try {
       // 获取群组专用配置
-      const groupConfig = this.getGroupAIConfig(guildId)
-      
+      const groupConfig = this.getGroupAIConfig(guildId);
+
       // 构建系统提示词（优先使用群组配置）
-      const systemPrompt = groupConfig.systemPrompt || this.getDefaultSystemPrompt()
-      
-      let requestBody: any
+      const systemPrompt = groupConfig.systemPrompt || this.getDefaultSystemPrompt();
+
+      let requestBody: any;
 
       if (this.config.useFileMode) {
-        // 文件模式：使用云雾API的聊天+读取文件接口格式
-        this.logger.debug('使用文件模式发送请求')
-        
+        // 文件模式：使用云雾 API 的聊天 + 读取文件接口格式
+        this.logger.debug('使用文件模式发送请求');
+
         // 构建文件模式的用户提示词，将内容直接包含在文本中
-        const filePrompt = this.buildFilePrompt(timeRange, messageCount, guildId)
-        const fullPrompt = `${filePrompt}\n\n📄 **聊天记录内容：**\n\n${content}`
-        
+        const filePrompt = this.buildFilePrompt(timeRange, messageCount, guildId);
+        const fullPrompt = `${filePrompt}\n\n📄 **聊天记录内容：**\n\n${content}`;
+
         requestBody = {
           model: this.config.model || 'gemini-2.5-flash-all',
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: fullPrompt }
+            { role: 'user', content: fullPrompt },
           ],
           temperature: 0.7,
-          stream: false
-        }
+          stream: false,
+        };
 
-        // 只有当maxTokens大于0时才添加限制
+        // 只有当 maxTokens 大于 0 时才添加限制
         if (this.config.maxTokens && this.config.maxTokens > 0) {
-          requestBody.max_tokens = this.config.maxTokens
+          requestBody.max_tokens = this.config.maxTokens;
         }
       } else {
         // 传统模式：直接发送文本内容
-        this.logger.debug('使用传统模式发送请求')
-        
-        const userPromptTemplate = groupConfig.userPromptTemplate || this.getDefaultUserPromptTemplate()
+        this.logger.debug('使用传统模式发送请求');
+
+        const userPromptTemplate =
+          groupConfig.userPromptTemplate || this.getDefaultUserPromptTemplate();
         const userPrompt = this.replaceTemplate(userPromptTemplate, {
           timeRange,
           messageCount: messageCount.toString(),
           groupInfo: this.getGroupInfo(guildId),
-          content
-        })
+          content,
+        });
 
         requestBody = {
           model: this.config.model || 'gpt-3.5-turbo',
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
+            { role: 'user', content: userPrompt },
           ],
-          temperature: 0.7
-        }
+          temperature: 0.7,
+        };
 
-        // 只有当maxTokens大于0时才添加限制
+        // 只有当 maxTokens 大于 0 时才添加限制
         if (this.config.maxTokens && this.config.maxTokens > 0) {
-          requestBody.max_tokens = this.config.maxTokens
+          requestBody.max_tokens = this.config.maxTokens;
         }
       }
 
-      this.logger.debug('发送AI请求', { 
-        url: this.config.apiUrl, 
+      this.logger.debug('发送 AI 请求', {
+        url: this.config.apiUrl,
         model: requestBody.model,
         fileMode: this.config.useFileMode,
         contentLength: content.length,
         hasFile: !!(this.config.useFileMode && content),
-        timeout: this.config.timeout || 60
-      })
+        timeout: this.config.timeout || 60,
+      });
 
       // 文件模式需要更长的超时时间
-      const timeoutMs = this.config.useFileMode 
-        ? Math.max((this.config.timeout || 120) * 1000, 120000) // 文件模式最少2分钟
-        : (this.config.timeout || 60) * 1000
+      const timeoutMs = this.config.useFileMode
+        ? Math.max((this.config.timeout || 120) * 1000, 120000) // 文件模式最少 2 分钟
+        : (this.config.timeout || 60) * 1000;
 
-      this.logger.debug(`设置超时时间: ${timeoutMs}ms`)
+      this.logger.debug(`设置超时时间：${timeoutMs}ms`);
 
       const response = await this.ctx.http.post(this.config.apiUrl, requestBody, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`
+          Authorization: `Bearer ${this.config.apiKey}`,
         },
-        timeout: timeoutMs
-      })
+        timeout: timeoutMs,
+      });
 
-      this.logger.debug('AI接口响应', { 
+      this.logger.debug('AI 接口响应', {
         hasResponse: !!response,
         responseKeys: response ? Object.keys(response) : [],
-        data: response ? JSON.stringify(response, null, 2) : 'null'
-      })
+        data: response ? JSON.stringify(response, null, 2) : 'null',
+      });
 
       if (!response) {
-        throw new Error('AI接口未返回响应')
+        throw new Error('AI 接口未返回响应');
       }
 
-      // 检测是否返回了HTML页面而不是JSON
+      // 检测是否返回了 HTML 页面而不是 JSON
       if (typeof response === 'string' && response.trim().startsWith('<!DOCTYPE html>')) {
-        this.logger.error('API返回HTML页面，可能是URL配置错误', {
+        this.logger.error('API 返回 HTML 页面，可能是 URL 配置错误', {
           apiUrl: this.config.apiUrl,
-          responseStart: response.substring(0, 200)
-        })
-        throw new Error(`API URL配置错误: ${this.config.apiUrl} 返回的是网页而不是API接口。请检查API URL是否正确，通常应该是 /v1/chat/completions 结尾`)
+          responseStart: response.substring(0, 200),
+        });
+        throw new Error(
+          `API URL 配置错误：${this.config.apiUrl} 返回的是网页而不是 API 接口。请检查 API URL 是否正确，通常应该是 /v1/chat/completions 结尾`
+        );
       }
 
       // 尝试不同的响应格式
-      let summary: string = ''
-      
+      let summary: string = '';
+
       if (response.choices && response.choices.length > 0) {
-        // 标准OpenAI格式
-        const choice = response.choices[0]
+        // 标准 OpenAI 格式
+        const choice = response.choices[0];
         if (choice.message && choice.message.content !== undefined) {
-          summary = choice.message.content.trim()
-          
-          // 检查是否因为token限制导致内容被截断
+          summary = choice.message.content.trim();
+
+          // 检查是否因为 token 限制导致内容被截断
           if (!summary && choice.finish_reason === 'length') {
-            const tokenInfo = this.config.maxTokens && this.config.maxTokens > 0 
-              ? `当前设置的最大token限制: ${this.config.maxTokens}`
-              : '当前未设置token限制，可能是API端限制'
-            throw new Error(`AI响应内容为空，原因：达到token限制。${tokenInfo}。建议减少输入内容长度或检查API设置`)
+            const tokenInfo =
+              this.config.maxTokens && this.config.maxTokens > 0
+                ? `当前设置的最大 token 限制：${this.config.maxTokens}`
+                : '当前未设置 token 限制，可能是 API 端限制';
+            throw new Error(
+              `AI 响应内容为空，原因：达到 token 限制。${tokenInfo}。建议减少输入内容长度或检查 API 设置`
+            );
           }
-          
+
           if (!summary && choice.finish_reason) {
-            throw new Error(`AI响应内容为空，finish_reason: ${choice.finish_reason}`)
+            throw new Error(`AI 响应内容为空，finish_reason: ${choice.finish_reason}`);
           }
-          
         } else if (choice.text) {
-          // 某些API可能在choice中直接返回text
-          summary = choice.text.trim()
+          // 某些 API 可能在 choice 中直接返回 text
+          summary = choice.text.trim();
         } else {
-          this.logger.error('AI响应消息格式错误', { 
+          this.logger.error('AI 响应消息格式错误', {
             choice: JSON.stringify(choice, null, 2),
             hasMessage: !!choice.message,
             hasText: !!choice.text,
             contentType: typeof choice.message?.content,
-            finishReason: choice.finish_reason
-          })
-          throw new Error(`AI响应消息格式错误: ${JSON.stringify(choice, null, 2)}`)
+            finishReason: choice.finish_reason,
+          });
+          throw new Error(`AI 响应消息格式错误：${JSON.stringify(choice, null, 2)}`);
         }
       } else if (response.content) {
-        // 某些API可能直接返回content字段
-        summary = response.content.trim()
+        // 某些 API 可能直接返回 content 字段
+        summary = response.content.trim();
       } else if (response.message) {
-        // 某些API可能直接返回message字段
-        summary = response.message.trim()
+        // 某些 API 可能直接返回 message 字段
+        summary = response.message.trim();
       } else if (response.text) {
-        // 某些API可能直接返回text字段
-        summary = response.text.trim()
+        // 某些 API 可能直接返回 text 字段
+        summary = response.text.trim();
       } else if (response.data && response.data.content) {
-        // 某些API可能在data字段中返回content
-        summary = response.data.content.trim()
+        // 某些 API 可能在 data 字段中返回 content
+        summary = response.data.content.trim();
       } else {
-        this.logger.error('AI响应格式错误', { 
+        this.logger.error('AI 响应格式错误', {
           response: JSON.stringify(response, null, 2),
           hasChoices: !!response.choices,
           choicesLength: response.choices?.length,
           hasContent: !!response.content,
           hasMessage: !!response.message,
           hasText: !!response.text,
-          hasData: !!response.data
-        })
-        throw new Error(`AI响应格式错误: ${JSON.stringify(response, null, 2)}`)
+          hasData: !!response.data,
+        });
+        throw new Error(`AI 响应格式错误：${JSON.stringify(response, null, 2)}`);
       }
 
       if (!summary) {
-        throw new Error('AI响应内容为空')
+        throw new Error('AI 响应内容为空');
       }
 
-      this.logger.info('AI总结生成成功', { 
+      this.logger.info('AI 总结生成成功', {
         inputLength: content.length,
         outputLength: summary.length,
-        fileMode: this.config.useFileMode
-      })
+        fileMode: this.config.useFileMode,
+      });
 
-      return summary
-
+      return summary;
     } catch (error) {
       // 增强错误信息处理
-      let errorMessage = error.message || '未知错误'
-      let suggestion = ''
+      let errorMessage = error.message || '未知错误';
+      let suggestion = '';
 
       if (errorMessage.includes('context disposed')) {
         suggestion = `建议：文件模式请求被中断。可能原因：
 1. 请求时间过长，建议减少聊天记录内容长度
 2. 网络连接不稳定，建议重试
-3. 尝试切换到文本模式：设置 useFileMode: false`
+3. 尝试切换到文本模式：设置 useFileMode: false`;
       } else if (errorMessage.includes('Service Unavailable')) {
-        suggestion = '建议：API服务暂时不可用，请稍后重试或检查服务状态'
+        suggestion = '建议：API 服务暂时不可用，请稍后重试或检查服务状态';
       } else if (errorMessage.includes('Unauthorized') || errorMessage.includes('401')) {
-        suggestion = '建议：API密钥无效，请检查配置中的apiKey是否正确'
+        suggestion = '建议：API 密钥无效，请检查配置中的 apiKey 是否正确';
       } else if (errorMessage.includes('Forbidden') || errorMessage.includes('403')) {
-        suggestion = '建议：API密钥权限不足，请检查密钥是否有访问该模型的权限'
+        suggestion = '建议：API 密钥权限不足，请检查密钥是否有访问该模型的权限';
       } else if (errorMessage.includes('Not Found') || errorMessage.includes('404')) {
-        suggestion = '建议：API接口地址错误，请检查apiUrl配置是否正确'
+        suggestion = '建议：API 接口地址错误，请检查 apiUrl 配置是否正确';
       } else if (errorMessage.includes('timeout')) {
-        suggestion = this.config.useFileMode 
-          ? '建议：文件模式请求超时，可尝试减少内容长度或增加timeout配置，或切换到文本模式'
-          : '建议：请求超时，可以尝试增加timeout配置或检查网络连接'
+        suggestion = this.config.useFileMode
+          ? '建议：文件模式请求超时，可尝试减少内容长度或增加 timeout 配置，或切换到文本模式'
+          : '建议：请求超时，可以尝试增加 timeout 配置或检查网络连接';
       } else if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('ECONNREFUSED')) {
-        suggestion = '建议：网络连接失败，请检查网络连接和API地址是否可访问'
-      } else if (errorMessage.includes('Rate limit') || errorMessage.includes('Too Many Requests')) {
-        suggestion = '建议：API调用频率过高，请稍后重试'
+        suggestion = '建议：网络连接失败，请检查网络连接和 API 地址是否可访问';
+      } else if (
+        errorMessage.includes('Rate limit') ||
+        errorMessage.includes('Too Many Requests')
+      ) {
+        suggestion = '建议：API 调用频率过高，请稍后重试';
       }
 
-      this.logger.error('AI总结生成失败', { 
+      this.logger.error('AI 总结生成失败', {
         error: errorMessage,
         suggestion,
         stack: error.stack,
@@ -302,15 +311,15 @@ export class AIService {
           fileMode: this.config.useFileMode,
           hasApiKey: !!this.config.apiKey,
           timeout: this.config.timeout,
-          contentLength: content.length
-        }
-      })
+          contentLength: content.length,
+        },
+      });
 
-      const finalMessage = suggestion 
-        ? `AI总结生成失败: ${errorMessage}\n\n${suggestion}`
-        : `AI总结生成失败: ${errorMessage}`
-      
-      throw new Error(finalMessage)
+      const finalMessage = suggestion
+        ? `AI 总结生成失败：${errorMessage}\n\n${suggestion}`
+        : `AI 总结生成失败：${errorMessage}`;
+
+      throw new Error(finalMessage);
     }
   }
 
@@ -318,21 +327,21 @@ export class AIService {
    * 构建文件模式的用户提示词
    */
   private buildFilePrompt(timeRange: string, messageCount: number, guildId: string): string {
-    const groupInfo = this.getGroupInfo(guildId)
-    
+    const groupInfo = this.getGroupInfo(guildId);
+
     // 获取群组专用配置
-    const groupConfig = this.getGroupAIConfig(guildId)
-    
+    const groupConfig = this.getGroupAIConfig(guildId);
+
     // 如果群组有自定义的用户提示词模板，使用它
     if (groupConfig.userPromptTemplate) {
       return this.replaceTemplate(groupConfig.userPromptTemplate, {
         timeRange,
         messageCount: messageCount.toString(),
         groupInfo,
-        content: '' // 在文件模式下，内容会在外部添加
-      })
+        content: '', // 在文件模式下，内容会在外部添加
+      });
     }
-    
+
     // 否则使用默认的文件模式提示词
     return `请分析以下群聊天记录：
 
@@ -342,7 +351,7 @@ export class AIService {
 - 聊天群组：${groupInfo}
 
 💬 **分析要求：**
-请根据下方的聊天记录内容，生成一份有趣的群日报。聊天记录已按时间顺序整理，请仔细阅读并分析。`
+请根据下方的聊天记录内容，生成一份有趣的群日报。聊天记录已按时间顺序整理，请仔细阅读并分析。`;
   }
 
   /**
@@ -360,8 +369,8 @@ export class AIService {
 
 输出格式要求：
 - 使用表达清晰的语调，符合群聊的氛围
-- 结构清晰，用emoji和标题分段，便于快速阅读
-- 控制在500字以内，重点突出，信息准确
+- 结构清晰，用 emoji 和标题分段，便于快速阅读
+- 控制在 500 字以内，重点突出，信息准确
 - 如果聊天内容较少，说明"今天大家比较安静，主要是日常交流"
 - 保护隐私，不透露具体的个人信息
 - **重要：在风趣幽默的同时，确保信息传达准确清晰，避免过度使用网络梗或难懂的表达**
@@ -372,7 +381,7 @@ export class AIService {
 - 重点信息用简洁明了的语言描述，辅以轻松的语调
 - 结构化呈现，让读者一目了然
 
-记住：幽默是调料，清晰是主菜！确保每个人都能快速理解群内动态。`
+记住：幽默是调料，清晰是主菜！确保每个人都能快速理解群内动态。`;
   }
 
   /**
@@ -389,41 +398,41 @@ export class AIService {
 💬 **聊天内容：**
 {content}
 
-请根据上述聊天记录，生成一份有趣的群日报～`
+请根据上述聊天记录，生成一份有趣的群日报～`;
   }
 
   /**
-   * 测试AI接口连接
+   * 测试 AI 接口连接
    */
   async testConnection(): Promise<{ success: boolean; error?: string }> {
     if (!this.isEnabled()) {
       return {
         success: false,
-        error: 'AI功能未启用或配置不完整'
-      }
+        error: 'AI 功能未启用或配置不完整',
+      };
     }
 
     try {
       const result = await this.generateSummary(
-        '用户A: 你好\n用户B: 你好，今天天气不错',
+        '用户 A: 你好\n用户 B: 你好，今天天气不错',
         '测试',
         2,
         'private'
-      )
+      );
 
       if (result) {
-        return { success: true }
+        return { success: true };
       } else {
         return {
           success: false,
-          error: '测试失败'
-        }
+          error: '测试失败',
+        };
       }
     } catch (error: any) {
       return {
         success: false,
-        error: handleError(error, '连接测试失败')
-      }
+        error: handleError(error, '连接测试失败'),
+      };
     }
   }
 
@@ -431,35 +440,38 @@ export class AIService {
    * 解析用户的自然语言分析查询
    * 返回时间范围和分析提示词
    */
-  async parseAnalysisQuery(userQuery: string, guildId: string): Promise<{
-    timeRange: string
-    analysisPrompt: string
+  async parseAnalysisQuery(
+    userQuery: string,
+    guildId: string
+  ): Promise<{
+    timeRange: string;
+    analysisPrompt: string;
   }> {
     if (!this.isEnabled(guildId)) {
-      throw new Error('AI功能未启用或该群组已禁用AI功能')
+      throw new Error('AI 功能未启用或该群组已禁用 AI 功能');
     }
 
     if (!this.config.apiUrl || !this.config.apiKey) {
-      throw new Error('AI配置不完整，请检查API URL和密钥')
+      throw new Error('AI 配置不完整，请检查 API URL 和密钥');
     }
 
     try {
       // 获取当前日期信息
-      const now = new Date()
-      const today = now.toISOString().split('T')[0]
-      const yesterday = new Date(now)
-      yesterday.setDate(yesterday.getDate() - 1)
-      const yesterdayStr = yesterday.toISOString().split('T')[0]
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
 
       const systemPrompt = `你是一个聊天记录分析助手。用户会用自然语言提出对聊天记录的分析需求。
-你需要解析用户的需求，并返回JSON格式的结果，包含两个字段：
+你需要解析用户的需求，并返回 JSON 格式的结果，包含两个字段：
 1. timeRange: 需要分析的时间范围，必须是具体日期格式
    - 单日：使用 YYYY-MM-DD 格式（如：2025-01-07）
    - 多日：使用逗号分隔的日期列表（如：2025-01-05,2025-01-06,2025-01-07）
    - 注意：必须返回具体日期，不要返回 "yesterday"、"last7days" 等相对时间
 2. analysisPrompt: 根据用户需求生成的简洁分析提示词，用于指导后续的聊天记录分析
 
-请确保返回的是有效的JSON格式，不要包含其他内容。
+请确保返回的是有效的 JSON 格式，不要包含其他内容。
 
 示例输入（今天是 2025-01-08）："昨天群里发生了什么大事？"
 示例输出：
@@ -468,7 +480,7 @@ export class AIService {
   "analysisPrompt": "找出聊天记录中的重要事件、热门话题和重要决定，简洁列出。"
 }
 
-示例输入（今天是 2025-01-08）："最近3天大家聊了什么游戏？"
+示例输入（今天是 2025-01-08）："最近 3 天大家聊了什么游戏？"
 示例输出：
 {
   "timeRange": "2025-01-06,2025-01-07,2025-01-08",
@@ -484,8 +496,8 @@ export class AIService {
 
 注意：
 - 如果用户没有明确指定时间，默认使用昨天的日期
-- analysisPrompt 要简洁、具体，指导AI给出不超过100字的分析结果
-- 必须返回有效的JSON格式，不要添加任何解释性文字`
+- analysisPrompt 要简洁、具体，指导 AI 给出不超过 100 字的分析结果
+- 必须返回有效的 JSON 格式，不要添加任何解释性文字`;
 
       const userPrompt = `当前日期信息：
 - 今天：${today}
@@ -493,79 +505,78 @@ export class AIService {
 
 用户查询：${userQuery}
 
-请根据当前日期，将用户查询中的相对时间转换为具体日期，然后返回JSON格式的结果。`
+请根据当前日期，将用户查询中的相对时间转换为具体日期，然后返回 JSON 格式的结果。`;
 
       const requestBody = {
         model: this.config.model || 'gpt-3.5-turbo',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
+          { role: 'user', content: userPrompt },
         ],
-        temperature: 0.3
-      }
+        temperature: 0.3,
+      };
 
       if (this.config.maxTokens && this.config.maxTokens > 0) {
-        requestBody['max_tokens'] = this.config.maxTokens
+        requestBody['max_tokens'] = this.config.maxTokens;
       }
 
       this.logger.debug('发送查询解析请求', {
         url: this.config.apiUrl,
-        userQuery
-      })
+        userQuery,
+      });
 
       const response = await this.ctx.http.post(this.config.apiUrl, requestBody, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`
+          Authorization: `Bearer ${this.config.apiKey}`,
         },
-        timeout: (this.config.timeout || 30) * 1000
-      })
+        timeout: (this.config.timeout || 30) * 1000,
+      });
 
       if (!response || !response.choices || response.choices.length === 0) {
-        throw new Error('AI接口未返回有效响应')
+        throw new Error('AI 接口未返回有效响应');
       }
 
-      const content = response.choices[0].message?.content?.trim()
+      const content = response.choices[0].message?.content?.trim();
       if (!content) {
-        throw new Error('AI返回内容为空')
+        throw new Error('AI 返回内容为空');
       }
 
-      // 解析JSON响应
-      let parsedResult: any
+      // 解析 JSON 响应
+      let parsedResult: any;
       try {
-        // 尝试提取JSON（可能被包裹在markdown代码块中）
-        const jsonMatch = content.match(/\{[\s\S]*\}/)
+        // 尝试提取 JSON（可能被包裹在 markdown 代码块中）
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-          throw new Error('响应中未找到JSON格式')
+          throw new Error('响应中未找到 JSON 格式');
         }
-        parsedResult = JSON.parse(jsonMatch[0])
+        parsedResult = JSON.parse(jsonMatch[0]);
       } catch (parseError) {
-        this.logger.error('解析AI返回的JSON失败', { content, error: parseError })
-        throw new Error(`解析AI响应失败: ${parseError.message}`)
+        this.logger.error('解析 AI 返回的 JSON 失败', { content, error: parseError });
+        throw new Error(`解析 AI 响应失败：${parseError.message}`);
       }
 
       // 验证返回的字段
       if (!parsedResult.timeRange || !parsedResult.analysisPrompt) {
-        throw new Error('AI返回的JSON缺少必需字段')
+        throw new Error('AI 返回的 JSON 缺少必需字段');
       }
 
       this.logger.info('查询解析成功', {
         userQuery,
         timeRange: parsedResult.timeRange,
-        analysisPromptLength: parsedResult.analysisPrompt.length
-      })
+        analysisPromptLength: parsedResult.analysisPrompt.length,
+      });
 
       return {
         timeRange: parsedResult.timeRange,
-        analysisPrompt: parsedResult.analysisPrompt
-      }
-
+        analysisPrompt: parsedResult.analysisPrompt,
+      };
     } catch (error) {
       this.logger.error('解析用户查询失败', {
         error: error.message,
-        stack: error.stack
-      })
-      throw new Error(`解析查询失败: ${error.message}`)
+        stack: error.stack,
+      });
+      throw new Error(`解析查询失败：${error.message}`);
     }
   }
 
@@ -580,11 +591,11 @@ export class AIService {
     guildId: string
   ): Promise<string> {
     if (!this.isEnabled(guildId)) {
-      throw new Error('AI功能未启用或该群组已禁用AI功能')
+      throw new Error('AI 功能未启用或该群组已禁用 AI 功能');
     }
 
     if (!this.config.apiUrl || !this.config.apiKey) {
-      throw new Error('AI配置不完整，请检查API URL和密钥')
+      throw new Error('AI 配置不完整，请检查 API URL 和密钥');
     }
 
     try {
@@ -593,16 +604,16 @@ export class AIService {
 分析要求：
 1. 准确理解用户的分析需求
 2. 仔细阅读聊天记录，提取相关信息
-3. 回答简洁明了，不超过100字
+3. 回答简洁明了，不超过 100 字
 4. 如果聊天记录中没有相关内容，如实说明
 
 输出格式：
 - 使用纯文本格式，不使用 Markdown、加粗、斜体等特殊格式
 - 直接给出分析结果，不需要标题或结构化排版
 - 语言精炼，一针见血
-- 如果是引用消息，格式为：用户名(ID:用户ID): 消息内容`
+- 如果是引用消息，格式为：用户名 (ID:用户 ID): 消息内容`;
 
-      const groupInfo = this.getGroupInfo(guildId)
+      const groupInfo = this.getGroupInfo(guildId);
       const userPrompt = `分析任务：${analysisPrompt}
 
 日期：${timeRange}
@@ -612,59 +623,58 @@ export class AIService {
 聊天记录：
 ${content}
 
-请根据上述分析任务和聊天记录，提供简洁的分析结果（不超过100字，使用纯文本格式）。`
+请根据上述分析任务和聊天记录，提供简洁的分析结果（不超过 100 字，使用纯文本格式）。`;
 
       const requestBody = {
         model: this.config.model || 'gpt-3.5-turbo',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
+          { role: 'user', content: userPrompt },
         ],
-        temperature: 0.7
-      }
+        temperature: 0.7,
+      };
 
       if (this.config.maxTokens && this.config.maxTokens > 0) {
-        requestBody['max_tokens'] = this.config.maxTokens
+        requestBody['max_tokens'] = this.config.maxTokens;
       }
 
       this.logger.debug('发送分析请求', {
         url: this.config.apiUrl,
         contentLength: content.length,
-        timeRange
-      })
+        timeRange,
+      });
 
-      const timeoutMs = (this.config.timeout || 60) * 1000
+      const timeoutMs = (this.config.timeout || 60) * 1000;
 
       const response = await this.ctx.http.post(this.config.apiUrl, requestBody, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`
+          Authorization: `Bearer ${this.config.apiKey}`,
         },
-        timeout: timeoutMs
-      })
+        timeout: timeoutMs,
+      });
 
       if (!response || !response.choices || response.choices.length === 0) {
-        throw new Error('AI接口未返回有效响应')
+        throw new Error('AI 接口未返回有效响应');
       }
 
-      const analysisResult = response.choices[0].message?.content?.trim()
+      const analysisResult = response.choices[0].message?.content?.trim();
       if (!analysisResult) {
-        throw new Error('AI返回内容为空')
+        throw new Error('AI 返回内容为空');
       }
 
       this.logger.info('分析完成', {
         inputLength: content.length,
-        outputLength: analysisResult.length
-      })
+        outputLength: analysisResult.length,
+      });
 
-      return analysisResult
-
+      return analysisResult;
     } catch (error) {
       this.logger.error('聊天记录分析失败', {
         error: error.message,
-        stack: error.stack
-      })
-      throw new Error(`分析失败: ${error.message}`)
+        stack: error.stack,
+      });
+      throw new Error(`分析失败：${error.message}`);
     }
   }
 
@@ -680,19 +690,19 @@ ${content}
     uniqueUsers: number
   ): Promise<AISummaryOutput> {
     if (!this.isEnabled(guildId)) {
-      throw new Error('AI总结功能未启用或该群组已禁用AI功能')
+      throw new Error('AI 总结功能未启用或该群组已禁用 AI 功能');
     }
 
     if (!this.config.apiUrl || !this.config.apiKey) {
-      throw new Error('AI配置不完整，请检查API URL和密钥')
+      throw new Error('AI 配置不完整，请检查 API URL 和密钥');
     }
 
-    const maxRetries = 2
-    let lastError: Error | null = null
+    const maxRetries = 2;
+    let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const groupInfo = this.getGroupInfo(guildId)
+        const groupInfo = this.getGroupInfo(guildId);
 
         const userPrompt = `请分析以下群聊天记录，并输出结构化JSON：
 
@@ -705,94 +715,93 @@ ${content}
 💬 聊天内容：
 ${content}
 
-请严格按照系统提示词要求的JSON格式输出分析结果。`
+请严格按照系统提示词要求的JSON格式输出分析结果。`;
 
         const requestBody: any = {
           model: this.config.model || 'gpt-3.5-turbo',
           messages: [
             { role: 'system', content: STRUCTURED_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt }
+            { role: 'user', content: userPrompt },
           ],
           temperature: 0.5, // 降低温度以获得更稳定的 JSON 输出
-          stream: false
-        }
+          stream: false,
+        };
 
         if (this.config.maxTokens && this.config.maxTokens > 0) {
-          requestBody.max_tokens = this.config.maxTokens
+          requestBody.max_tokens = this.config.maxTokens;
         }
 
         this.logger.debug(`发送结构化总结请求 (尝试 ${attempt}/${maxRetries})`, {
           url: this.config.apiUrl,
           model: requestBody.model,
-          contentLength: content.length
-        })
+          contentLength: content.length,
+        });
 
-        const timeoutMs = Math.max((this.config.timeout || 120) * 1000, 120000)
+        const timeoutMs = Math.max((this.config.timeout || 120) * 1000, 120000);
 
         const response = await this.ctx.http.post(this.config.apiUrl, requestBody, {
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.config.apiKey}`
+            Authorization: `Bearer ${this.config.apiKey}`,
           },
-          timeout: timeoutMs
-        })
+          timeout: timeoutMs,
+        });
 
         if (!response) {
-          throw new Error('AI接口未返回响应')
+          throw new Error('AI 接口未返回响应');
         }
 
         // 提取响应内容
-        let responseContent: string = ''
+        let responseContent: string = '';
 
         if (response.choices && response.choices.length > 0) {
-          const choice = response.choices[0]
+          const choice = response.choices[0];
           if (choice.message && choice.message.content) {
-            responseContent = choice.message.content.trim()
+            responseContent = choice.message.content.trim();
           } else if (choice.text) {
-            responseContent = choice.text.trim()
+            responseContent = choice.text.trim();
           }
         } else if (response.content) {
-          responseContent = response.content.trim()
+          responseContent = response.content.trim();
         } else if (response.message) {
-          responseContent = response.message.trim()
+          responseContent = response.message.trim();
         } else if (response.text) {
-          responseContent = response.text.trim()
+          responseContent = response.text.trim();
         }
 
         if (!responseContent) {
-          throw new Error('AI响应内容为空')
+          throw new Error('AI 响应内容为空');
         }
 
         // 解析 JSON 响应
-        const parsed = this.parseStructuredResponse(responseContent)
+        const parsed = this.parseStructuredResponse(responseContent);
 
-        this.logger.info('结构化AI总结生成成功', {
+        this.logger.info('结构化 AI 总结生成成功', {
           inputLength: content.length,
           hotTopicsCount: parsed.hotTopics.length,
-          quotesCount: parsed.quotes.length
-        })
+          quotesCount: parsed.quotes.length,
+        });
 
-        return parsed
-
+        return parsed;
       } catch (error: any) {
-        lastError = error
+        lastError = error;
         this.logger.warn(`结构化总结生成失败 (尝试 ${attempt}/${maxRetries})`, {
-          error: error.message
-        })
+          error: error.message,
+        });
 
         if (attempt < maxRetries) {
           // 等待一会儿再重试
-          await new Promise(resolve => setTimeout(resolve, 2000))
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
     }
 
     // 所有重试都失败，返回默认结构
     this.logger.error('结构化总结生成最终失败，使用默认结构', {
-      error: lastError?.message
-    })
+      error: lastError?.message,
+    });
 
-    return this.getDefaultAISummaryOutput()
+    return this.getDefaultAISummaryOutput();
   }
 
   /**
@@ -801,31 +810,30 @@ ${content}
   private parseStructuredResponse(content: string): AISummaryOutput {
     try {
       // 尝试提取 JSON（可能被包裹在 markdown 代码块中）
-      let jsonStr = content
+      let jsonStr = content;
 
       // 移除可能的 markdown 代码块标记
-      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/)
+      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (jsonMatch) {
-        jsonStr = jsonMatch[1].trim()
+        jsonStr = jsonMatch[1].trim();
       } else {
         // 尝试直接找到 JSON 对象
-        const objMatch = content.match(/\{[\s\S]*\}/)
+        const objMatch = content.match(/\{[\s\S]*\}/);
         if (objMatch) {
-          jsonStr = objMatch[0]
+          jsonStr = objMatch[0];
         }
       }
 
-      const parsed = JSON.parse(jsonStr)
+      const parsed = JSON.parse(jsonStr);
 
       // 验证并补全必需字段
-      return this.validateAndNormalizeOutput(parsed)
-
+      return this.validateAndNormalizeOutput(parsed);
     } catch (parseError) {
-      this.logger.error('解析AI结构化响应失败', {
+      this.logger.error('解析 AI 结构化响应失败', {
         content: content.substring(0, 500),
-        error: parseError.message
-      })
-      throw new Error(`JSON解析失败: ${parseError.message}`)
+        error: parseError.message,
+      });
+      throw new Error(`JSON 解析失败：${parseError.message}`);
     }
   }
 
@@ -834,18 +842,18 @@ ${content}
    */
   private validateAndNormalizeOutput(parsed: any): AISummaryOutput {
     // 确保 summary 字段存在
-    const summary = parsed.summary || {}
+    const summary = parsed.summary || {};
 
     const output: AISummaryOutput = {
       summary: {
         overview: summary.overview || '今日群内互动平稳，主要以日常交流为主。',
         highlights: Array.isArray(summary.highlights) ? summary.highlights : [],
-        atmosphere: summary.atmosphere || '轻松日常'
+        atmosphere: summary.atmosphere || '轻松日常',
       },
       hotTopics: [],
       importantInfo: [],
-      quotes: []
-    }
+      quotes: [],
+    };
 
     // 处理 hotTopics
     if (Array.isArray(parsed.hotTopics)) {
@@ -855,9 +863,9 @@ ${content}
           topic: t.topic || '',
           description: t.description || '',
           participants: Array.isArray(t.participants) ? t.participants : [],
-          heatLevel: ['high', 'medium', 'low'].includes(t.heatLevel) ? t.heatLevel : 'medium'
+          heatLevel: ['high', 'medium', 'low'].includes(t.heatLevel) ? t.heatLevel : 'medium',
         }))
-        .slice(0, 5)
+        .slice(0, 5);
     }
 
     // 处理 importantInfo
@@ -865,11 +873,13 @@ ${content}
       output.importantInfo = parsed.importantInfo
         .filter((i: any) => i && i.content)
         .map((i: any) => ({
-          type: ['announcement', 'link', 'resource', 'decision', 'other'].includes(i.type) ? i.type : 'other',
+          type: ['announcement', 'link', 'resource', 'decision', 'other'].includes(i.type)
+            ? i.type
+            : 'other',
           content: i.content || '',
-          source: i.source
+          source: i.source,
         }))
-        .slice(0, 10)
+        .slice(0, 10);
     }
 
     // 处理 quotes
@@ -878,12 +888,12 @@ ${content}
         .filter((q: any) => q && q.content && q.author)
         .map((q: any) => ({
           content: q.content || '',
-          author: q.author || '匿名'
+          author: q.author || '匿名',
         }))
-        .slice(0, 5)
+        .slice(0, 5);
     }
 
-    return output
+    return output;
   }
 
   /**
@@ -892,13 +902,13 @@ ${content}
   private getDefaultAISummaryOutput(): AISummaryOutput {
     return {
       summary: {
-        overview: '今日群内互动情况已记录，AI分析暂时不可用。',
+        overview: '今日群内互动情况已记录，AI 分析暂时不可用。',
         highlights: ['群内有日常交流活动'],
-        atmosphere: '日常'
+        atmosphere: '日常',
       },
       hotTopics: [],
       importantInfo: [],
-      quotes: []
-    }
+      quotes: [],
+    };
   }
 }

@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/pynickle/chat-summarizer/compare/v1.0.0...v1.1.0) (2026-03-18)
+
+### ✨ Features
+
+* make a big update ([6022ecb](https://github.com/pynickle/chat-summarizer/commit/6022ecb2841a09f6a243436b21da3ed91d37f995))
+
 ## 1.0.0 (2026-03-18)
 
 ### ✨ Features

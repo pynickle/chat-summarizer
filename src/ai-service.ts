@@ -93,6 +93,87 @@ export class AIService {
     return this.getApiMode() === 'responses' ? openai.responses(modelName) : openai.chat(modelName);
   }
 
+  private toRecord(value: unknown): Record<string, unknown> | undefined {
+    if (typeof value === 'object' && value !== null) {
+      return value as Record<string, unknown>;
+    }
+    return undefined;
+  }
+
+  private readString(record: Record<string, unknown> | undefined, key: string): string | undefined {
+    const value = record?.[key];
+    return typeof value === 'string' && value.trim() ? value : undefined;
+  }
+
+  private readNumber(record: Record<string, unknown> | undefined, key: string): number | undefined {
+    const value = record?.[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private stringifyUnknown(value: unknown): string | undefined {
+    if (typeof value === 'string') {
+      return value.trim() || undefined;
+    }
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return undefined;
+      }
+    }
+    return String(value);
+  }
+
+  private trimForLog(text: string, maxLength: number = 1200): string {
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...(truncated)` : text;
+  }
+
+  private extractApiErrorContext(error: unknown): {
+    message: string;
+    statusCode?: number;
+    code?: string;
+    requestUrl?: string;
+    responseBody?: string;
+  } {
+    const context: {
+      message: string;
+      statusCode?: number;
+      code?: string;
+      requestUrl?: string;
+      responseBody?: string;
+    } = {
+      message: error instanceof Error ? error.message : String(error),
+    };
+
+    const root = this.toRecord(error);
+    const cause = this.toRecord(root?.cause);
+    const response = this.toRecord(root?.response);
+
+    context.statusCode =
+      this.readNumber(root, 'statusCode') ??
+      this.readNumber(root, 'status') ??
+      this.readNumber(response, 'status');
+
+    context.code = this.readString(root, 'code') ?? this.readString(cause, 'code');
+
+    context.requestUrl =
+      this.readString(root, 'url') ?? this.readString(cause, 'url') ?? this.readString(response, 'url');
+
+    context.responseBody =
+      this.stringifyUnknown(root?.responseBody) ??
+      this.stringifyUnknown(root?.responseText) ??
+      this.stringifyUnknown(root?.data) ??
+      this.stringifyUnknown(cause?.responseBody) ??
+      this.stringifyUnknown(cause?.responseText) ??
+      this.stringifyUnknown(cause?.data) ??
+      this.stringifyUnknown(response?.body);
+
+    return context;
+  }
+
   private async generateTextWithMessages(options: {
     messages: ModelMessage[];
     temperature: number;
@@ -117,6 +198,30 @@ export class AIService {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(`请求超时（>${options.timeoutSeconds} 秒）`);
       }
+
+      const errorContext = this.extractApiErrorContext(error);
+      const responseBody =
+        errorContext.responseBody && errorContext.responseBody.trim()
+          ? this.trimForLog(errorContext.responseBody)
+          : undefined;
+
+      this.logger.error('AI 请求失败', {
+        message: errorContext.message,
+        statusCode: errorContext.statusCode,
+        code: errorContext.code,
+        requestUrl: errorContext.requestUrl,
+        responseBody,
+        mode: this.getApiMode(),
+        model: this.config.model || 'gpt-3.5-turbo',
+      });
+
+      if (errorContext.statusCode || errorContext.code || responseBody) {
+        const statusPart = errorContext.statusCode ? `HTTP ${errorContext.statusCode}` : '未知状态';
+        const codePart = errorContext.code ? `, code=${errorContext.code}` : '';
+        const bodyPart = responseBody ? `\n响应详情：${responseBody}` : '';
+        throw new Error(`AI API 请求失败（${statusPart}${codePart}）${bodyPart}`);
+      }
+
       throw error;
     } finally {
       clearTimeout(timer);

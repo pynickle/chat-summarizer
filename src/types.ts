@@ -72,6 +72,7 @@ export interface Config {
     enabled: boolean; // 是否启用 AI 总结功能
     apiUrl: string; // AI 接口 URL
     apiKey: string; // AI 接口密钥
+    apiMode?: 'chat.completions' | 'responses';
     model?: string; // AI 模型名称（可选）
     maxTokens?: number; // 最大 token 数（可选）
     timeout?: number; // 请求超时时间（秒，可选）

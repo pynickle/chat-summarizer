@@ -1,4 +1,6 @@
 import { Context, Logger } from 'koishi';
+import { createOpenAI } from '@ai-sdk/openai';
+import { generateText, type ModelMessage } from 'ai';
 import { Config, AISummaryOutput } from './types';
 import { handleError } from './utils';
 import { STRUCTURED_SYSTEM_PROMPT } from './config';
@@ -7,10 +9,7 @@ export class AIService {
   private logger: Logger;
   private globalConfig: Config;
 
-  constructor(
-    private ctx: Context,
-    config: Config
-  ) {
+  constructor(ctx: Context, config: Config) {
     this.logger = ctx.logger('chat-summarizer:ai');
     this.globalConfig = config;
   }
@@ -76,6 +75,75 @@ export class AIService {
     return `群组 ${guildId}`;
   }
 
+  private getApiMode(): 'chat.completions' | 'responses' {
+    return this.config.apiMode === 'responses' ? 'responses' : 'chat.completions';
+  }
+
+  private getApiBaseUrl(apiUrl: string): string {
+    const trimmed = apiUrl.trim();
+    if (!trimmed) return trimmed;
+
+    const normalizePath = (path: string): string => {
+      const withoutEndpoint = path.replace(/\/(chat\/completions|responses)$/u, '');
+      return withoutEndpoint === '/' ? '' : withoutEndpoint.replace(/\/$/u, '');
+    };
+
+    try {
+      const parsed = new URL(trimmed);
+      parsed.search = '';
+      parsed.hash = '';
+      parsed.pathname = normalizePath(parsed.pathname);
+      return parsed.toString().replace(/\/$/u, '');
+    } catch {
+      const stripped = trimmed.replace(/[?#].*$/u, '');
+      return normalizePath(stripped);
+    }
+  }
+
+  private buildModel() {
+    if (!this.config.apiKey || !this.config.apiUrl) {
+      throw new Error('AI 配置不完整，请检查 API URL 和密钥');
+    }
+
+    const modelName = this.config.model || 'gpt-3.5-turbo';
+    const openai = createOpenAI({
+      apiKey: this.config.apiKey,
+      baseURL: this.getApiBaseUrl(this.config.apiUrl),
+    });
+
+    return this.getApiMode() === 'responses' ? openai.responses(modelName) : openai.chat(modelName);
+  }
+
+  private async generateTextWithMessages(options: {
+    messages: ModelMessage[];
+    temperature: number;
+    timeoutSeconds: number;
+  }): Promise<string> {
+    const abortController = new AbortController();
+    const timeoutMs = Math.max(1, options.timeoutSeconds) * 1000;
+    const timer = setTimeout(() => abortController.abort(), timeoutMs);
+
+    try {
+      const result = await generateText({
+        model: this.buildModel(),
+        messages: options.messages,
+        temperature: options.temperature,
+        maxOutputTokens:
+          this.config.maxTokens && this.config.maxTokens > 0 ? this.config.maxTokens : undefined,
+        abortSignal: abortController.signal,
+      });
+
+      return result.text.trim();
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`请求超时（>${options.timeoutSeconds} 秒）`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /**
    * 生成聊天记录总结
    */
@@ -101,7 +169,7 @@ export class AIService {
       // 构建系统提示词（优先使用群组配置）
       const systemPrompt = groupConfig.systemPrompt || this.getDefaultSystemPrompt();
 
-      let requestBody: any;
+      let userPrompt: string;
 
       if (this.config.useFileMode) {
         // 文件模式：使用云雾 API 的聊天 + 读取文件接口格式
@@ -109,53 +177,25 @@ export class AIService {
 
         // 构建文件模式的用户提示词，将内容直接包含在文本中
         const filePrompt = this.buildFilePrompt(timeRange, messageCount, guildId);
-        const fullPrompt = `${filePrompt}\n\n📄 **聊天记录内容：**\n\n${content}`;
-
-        requestBody = {
-          model: this.config.model || 'gemini-2.5-flash-all',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: fullPrompt },
-          ],
-          temperature: 0.7,
-          stream: false,
-        };
-
-        // 只有当 maxTokens 大于 0 时才添加限制
-        if (this.config.maxTokens && this.config.maxTokens > 0) {
-          requestBody.max_tokens = this.config.maxTokens;
-        }
+        userPrompt = `${filePrompt}\n\n📄 **聊天记录内容：**\n\n${content}`;
       } else {
         // 传统模式：直接发送文本内容
         this.logger.debug('使用传统模式发送请求');
 
         const userPromptTemplate =
           groupConfig.userPromptTemplate || this.getDefaultUserPromptTemplate();
-        const userPrompt = this.replaceTemplate(userPromptTemplate, {
+        userPrompt = this.replaceTemplate(userPromptTemplate, {
           timeRange,
           messageCount: messageCount.toString(),
           groupInfo: this.getGroupInfo(guildId),
           content,
         });
-
-        requestBody = {
-          model: this.config.model || 'gpt-3.5-turbo',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.7,
-        };
-
-        // 只有当 maxTokens 大于 0 时才添加限制
-        if (this.config.maxTokens && this.config.maxTokens > 0) {
-          requestBody.max_tokens = this.config.maxTokens;
-        }
       }
 
       this.logger.debug('发送 AI 请求', {
-        url: this.config.apiUrl,
-        model: requestBody.model,
+        url: this.getApiBaseUrl(this.config.apiUrl),
+        mode: this.getApiMode(),
+        model: this.config.model || 'gpt-3.5-turbo',
         fileMode: this.config.useFileMode,
         contentLength: content.length,
         hasFile: !!(this.config.useFileMode && content),
@@ -169,95 +209,14 @@ export class AIService {
 
       this.logger.debug(`设置超时时间：${timeoutMs}ms`);
 
-      const response = await this.ctx.http.post(this.config.apiUrl, requestBody, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        timeout: timeoutMs,
+      const summary = await this.generateTextWithMessages({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.7,
+        timeoutSeconds: Math.ceil(timeoutMs / 1000),
       });
-
-      this.logger.debug('AI 接口响应', {
-        hasResponse: !!response,
-        responseKeys: response ? Object.keys(response) : [],
-        data: response ? JSON.stringify(response, null, 2) : 'null',
-      });
-
-      if (!response) {
-        throw new Error('AI 接口未返回响应');
-      }
-
-      // 检测是否返回了 HTML 页面而不是 JSON
-      if (typeof response === 'string' && response.trim().startsWith('<!DOCTYPE html>')) {
-        this.logger.error('API 返回 HTML 页面，可能是 URL 配置错误', {
-          apiUrl: this.config.apiUrl,
-          responseStart: response.substring(0, 200),
-        });
-        throw new Error(
-          `API URL 配置错误：${this.config.apiUrl} 返回的是网页而不是 API 接口。请检查 API URL 是否正确，通常应该是 /v1/chat/completions 结尾`
-        );
-      }
-
-      // 尝试不同的响应格式
-      let summary: string = '';
-
-      if (response.choices && response.choices.length > 0) {
-        // 标准 OpenAI 格式
-        const choice = response.choices[0];
-        if (choice.message && choice.message.content !== undefined) {
-          summary = choice.message.content.trim();
-
-          // 检查是否因为 token 限制导致内容被截断
-          if (!summary && choice.finish_reason === 'length') {
-            const tokenInfo =
-              this.config.maxTokens && this.config.maxTokens > 0
-                ? `当前设置的最大 token 限制：${this.config.maxTokens}`
-                : '当前未设置 token 限制，可能是 API 端限制';
-            throw new Error(
-              `AI 响应内容为空，原因：达到 token 限制。${tokenInfo}。建议减少输入内容长度或检查 API 设置`
-            );
-          }
-
-          if (!summary && choice.finish_reason) {
-            throw new Error(`AI 响应内容为空，finish_reason: ${choice.finish_reason}`);
-          }
-        } else if (choice.text) {
-          // 某些 API 可能在 choice 中直接返回 text
-          summary = choice.text.trim();
-        } else {
-          this.logger.error('AI 响应消息格式错误', {
-            choice: JSON.stringify(choice, null, 2),
-            hasMessage: !!choice.message,
-            hasText: !!choice.text,
-            contentType: typeof choice.message?.content,
-            finishReason: choice.finish_reason,
-          });
-          throw new Error(`AI 响应消息格式错误：${JSON.stringify(choice, null, 2)}`);
-        }
-      } else if (response.content) {
-        // 某些 API 可能直接返回 content 字段
-        summary = response.content.trim();
-      } else if (response.message) {
-        // 某些 API 可能直接返回 message 字段
-        summary = response.message.trim();
-      } else if (response.text) {
-        // 某些 API 可能直接返回 text 字段
-        summary = response.text.trim();
-      } else if (response.data && response.data.content) {
-        // 某些 API 可能在 data 字段中返回 content
-        summary = response.data.content.trim();
-      } else {
-        this.logger.error('AI 响应格式错误', {
-          response: JSON.stringify(response, null, 2),
-          hasChoices: !!response.choices,
-          choicesLength: response.choices?.length,
-          hasContent: !!response.content,
-          hasMessage: !!response.message,
-          hasText: !!response.text,
-          hasData: !!response.data,
-        });
-        throw new Error(`AI 响应格式错误：${JSON.stringify(response, null, 2)}`);
-      }
 
       if (!summary) {
         throw new Error('AI 响应内容为空');
@@ -507,37 +466,21 @@ export class AIService {
 
 请根据当前日期，将用户查询中的相对时间转换为具体日期，然后返回 JSON 格式的结果。`;
 
-      const requestBody = {
-        model: this.config.model || 'gpt-3.5-turbo',
+      this.logger.debug('发送查询解析请求', {
+        url: this.getApiBaseUrl(this.config.apiUrl),
+        mode: this.getApiMode(),
+        userQuery,
+      });
+
+      const content = await this.generateTextWithMessages({
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.3,
-      };
-
-      if (this.config.maxTokens && this.config.maxTokens > 0) {
-        requestBody['max_tokens'] = this.config.maxTokens;
-      }
-
-      this.logger.debug('发送查询解析请求', {
-        url: this.config.apiUrl,
-        userQuery,
+        timeoutSeconds: this.config.timeout || 30,
       });
 
-      const response = await this.ctx.http.post(this.config.apiUrl, requestBody, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        timeout: (this.config.timeout || 30) * 1000,
-      });
-
-      if (!response || !response.choices || response.choices.length === 0) {
-        throw new Error('AI 接口未返回有效响应');
-      }
-
-      const content = response.choices[0].message?.content?.trim();
       if (!content) {
         throw new Error('AI 返回内容为空');
       }
@@ -625,40 +568,22 @@ ${content}
 
 请根据上述分析任务和聊天记录，提供简洁的分析结果（不超过 100 字，使用纯文本格式）。`;
 
-      const requestBody = {
-        model: this.config.model || 'gpt-3.5-turbo',
+      this.logger.debug('发送分析请求', {
+        url: this.getApiBaseUrl(this.config.apiUrl),
+        mode: this.getApiMode(),
+        contentLength: content.length,
+        timeRange,
+      });
+
+      const analysisResult = await this.generateTextWithMessages({
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.7,
-      };
-
-      if (this.config.maxTokens && this.config.maxTokens > 0) {
-        requestBody['max_tokens'] = this.config.maxTokens;
-      }
-
-      this.logger.debug('发送分析请求', {
-        url: this.config.apiUrl,
-        contentLength: content.length,
-        timeRange,
+        timeoutSeconds: this.config.timeout || 60,
       });
 
-      const timeoutMs = (this.config.timeout || 60) * 1000;
-
-      const response = await this.ctx.http.post(this.config.apiUrl, requestBody, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        timeout: timeoutMs,
-      });
-
-      if (!response || !response.choices || response.choices.length === 0) {
-        throw new Error('AI 接口未返回有效响应');
-      }
-
-      const analysisResult = response.choices[0].message?.content?.trim();
       if (!analysisResult) {
         throw new Error('AI 返回内容为空');
       }
@@ -717,57 +642,23 @@ ${content}
 
 请严格按照系统提示词要求的JSON格式输出分析结果。`;
 
-        const requestBody: any = {
+        this.logger.debug(`发送结构化总结请求 (尝试 ${attempt}/${maxRetries})`, {
+          url: this.getApiBaseUrl(this.config.apiUrl),
+          mode: this.getApiMode(),
           model: this.config.model || 'gpt-3.5-turbo',
+          contentLength: content.length,
+        });
+
+        const timeoutSeconds = Math.max(this.config.timeout || 120, 120);
+
+        const responseContent = await this.generateTextWithMessages({
           messages: [
             { role: 'system', content: STRUCTURED_SYSTEM_PROMPT },
             { role: 'user', content: userPrompt },
           ],
-          temperature: 0.5, // 降低温度以获得更稳定的 JSON 输出
-          stream: false,
-        };
-
-        if (this.config.maxTokens && this.config.maxTokens > 0) {
-          requestBody.max_tokens = this.config.maxTokens;
-        }
-
-        this.logger.debug(`发送结构化总结请求 (尝试 ${attempt}/${maxRetries})`, {
-          url: this.config.apiUrl,
-          model: requestBody.model,
-          contentLength: content.length,
+          temperature: 0.5,
+          timeoutSeconds,
         });
-
-        const timeoutMs = Math.max((this.config.timeout || 120) * 1000, 120000);
-
-        const response = await this.ctx.http.post(this.config.apiUrl, requestBody, {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.config.apiKey}`,
-          },
-          timeout: timeoutMs,
-        });
-
-        if (!response) {
-          throw new Error('AI 接口未返回响应');
-        }
-
-        // 提取响应内容
-        let responseContent: string = '';
-
-        if (response.choices && response.choices.length > 0) {
-          const choice = response.choices[0];
-          if (choice.message && choice.message.content) {
-            responseContent = choice.message.content.trim();
-          } else if (choice.text) {
-            responseContent = choice.text.trim();
-          }
-        } else if (response.content) {
-          responseContent = response.content.trim();
-        } else if (response.message) {
-          responseContent = response.message.trim();
-        } else if (response.text) {
-          responseContent = response.text.trim();
-        }
 
         if (!responseContent) {
           throw new Error('AI 响应内容为空');

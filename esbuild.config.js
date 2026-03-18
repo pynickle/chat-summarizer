@@ -11,6 +11,8 @@ await build({
     '@aws-sdk/client-s3',
     '@aws-sdk/lib-storage',
     'axios',
-    'github-markdown-css'
+    'github-markdown-css',
+    'ai',
+    '@ai-sdk/openai'
   ],
 });

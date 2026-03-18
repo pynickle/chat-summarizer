@@ -88,9 +88,7 @@ export const ConfigSchema: Schema<Config> = Schema.object({
 
   ai: Schema.object({
     enabled: Schema.boolean().description('是否启用 AI 总结功能').default(false),
-    apiUrl: Schema.string()
-      .description('OpenAI 接口地址（支持 baseURL，如：https://api.openai.com/v1；也兼容完整端点）')
-      .default(''),
+    apiUrl: Schema.string().description('OpenAI 接口地址').default(''),
     apiKey: Schema.string().description('AI 接口密钥').role('secret').default(''),
     apiMode: Schema.union([
       Schema.const('chat.completions').description('使用 OpenAI Chat Completions 接口'),
@@ -98,7 +96,7 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     ])
       .description('OpenAI 接口模式')
       .default('chat.completions'),
-    model: Schema.string().description('AI 模型名称（如：gpt-3.5-turbo）').default('gpt-3.5-turbo'),
+    model: Schema.string().description('AI 模型名称（如：gpt-5.4）').default('gpt-5.4'),
     maxTokens: Schema.number()
       .description('最大 token 数（设置为 0 表示不限制）')
       .min(0)

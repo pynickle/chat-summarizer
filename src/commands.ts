@@ -279,7 +279,7 @@ export class CommandHandler {
       statusText += '\n🤖 AI 配置:\n';
       statusText += `• API 地址：${this.config.ai.apiUrl || '未配置'}\n`;
       statusText += `• 接口模式：${this.config.ai.apiMode || 'chat.completions'}\n`;
-      statusText += `• 模型：${this.config.ai.model || 'gpt-3.5-turbo'}\n`;
+      statusText += `• 模型：${this.config.ai.model || 'gpt-5.4'}\n`;
       statusText += `• 最大 Token: ${this.config.ai.maxTokens || 2000}\n`;
       statusText += `• 默认总结时间：${this.config.ai.defaultSummaryTime || '03:00'}\n`;
       statusText += `• 默认推送时间：${this.config.ai.defaultPushTime || this.config.ai.defaultSummaryTime || '03:00'}\n`;

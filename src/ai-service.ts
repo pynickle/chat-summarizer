@@ -79,36 +79,15 @@ export class AIService {
     return this.config.apiMode === 'responses' ? 'responses' : 'chat.completions';
   }
 
-  private getApiBaseUrl(apiUrl: string): string {
-    const trimmed = apiUrl.trim();
-    if (!trimmed) return trimmed;
-
-    const normalizePath = (path: string): string => {
-      const withoutEndpoint = path.replace(/\/(chat\/completions|responses)$/u, '');
-      return withoutEndpoint === '/' ? '' : withoutEndpoint.replace(/\/$/u, '');
-    };
-
-    try {
-      const parsed = new URL(trimmed);
-      parsed.search = '';
-      parsed.hash = '';
-      parsed.pathname = normalizePath(parsed.pathname);
-      return parsed.toString().replace(/\/$/u, '');
-    } catch {
-      const stripped = trimmed.replace(/[?#].*$/u, '');
-      return normalizePath(stripped);
-    }
-  }
-
   private buildModel() {
     if (!this.config.apiKey || !this.config.apiUrl) {
       throw new Error('AI 配置不完整，请检查 API URL 和密钥');
     }
 
-    const modelName = this.config.model || 'gpt-3.5-turbo';
+    const modelName = this.config.model || 'gpt-5.4';
     const openai = createOpenAI({
       apiKey: this.config.apiKey,
-      baseURL: this.getApiBaseUrl(this.config.apiUrl),
+      baseURL: this.config.apiUrl,
     });
 
     return this.getApiMode() === 'responses' ? openai.responses(modelName) : openai.chat(modelName);
@@ -193,9 +172,9 @@ export class AIService {
       }
 
       this.logger.debug('发送 AI 请求', {
-        url: this.getApiBaseUrl(this.config.apiUrl),
+        url: this.config.apiUrl,
         mode: this.getApiMode(),
-        model: this.config.model || 'gpt-3.5-turbo',
+        model: this.config.model || 'gpt-5.4',
         fileMode: this.config.useFileMode,
         contentLength: content.length,
         hasFile: !!(this.config.useFileMode && content),
@@ -467,7 +446,7 @@ export class AIService {
 请根据当前日期，将用户查询中的相对时间转换为具体日期，然后返回 JSON 格式的结果。`;
 
       this.logger.debug('发送查询解析请求', {
-        url: this.getApiBaseUrl(this.config.apiUrl),
+        url: this.config.apiUrl,
         mode: this.getApiMode(),
         userQuery,
       });
@@ -569,7 +548,7 @@ ${content}
 请根据上述分析任务和聊天记录，提供简洁的分析结果（不超过 100 字，使用纯文本格式）。`;
 
       this.logger.debug('发送分析请求', {
-        url: this.getApiBaseUrl(this.config.apiUrl),
+        url: this.config.apiUrl,
         mode: this.getApiMode(),
         contentLength: content.length,
         timeRange,
@@ -643,9 +622,9 @@ ${content}
 请严格按照系统提示词要求的JSON格式输出分析结果。`;
 
         this.logger.debug(`发送结构化总结请求 (尝试 ${attempt}/${maxRetries})`, {
-          url: this.getApiBaseUrl(this.config.apiUrl),
+          url: this.config.apiUrl,
           mode: this.getApiMode(),
-          model: this.config.model || 'gpt-3.5-turbo',
+          model: this.config.model || 'gpt-5.4',
           contentLength: content.length,
         });
 

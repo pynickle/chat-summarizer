@@ -1401,7 +1401,7 @@ export function apply(ctx: Context, config: Config) {
         statistics,
         metadata: {
           generatedAt: Date.now(),
-          aiModel: config.ai.model || 'gpt-3.5-turbo',
+          aiModel: config.ai.model || 'gpt-5.4',
         },
       };
 

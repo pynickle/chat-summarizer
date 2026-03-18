@@ -48,10 +48,6 @@ export class MarkdownToImageService {
    */
   private generateFontCSS(): string {
     return `
-      /* Google Fonts CDN */
-      @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
-
       /* Emoji 图片样式 */
       .emoji {
         display: inline-block;
@@ -64,7 +60,7 @@ export class MarkdownToImageService {
 
       /* 确保 emoji 文本有正确的字体回退 */
       .emoji-text, span:has(> .emoji) {
-        font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif;
+        font-family: Maple Mono NF CN, "Segoe UI", sans-serif;
       }
     `;
   }
@@ -205,7 +201,7 @@ export class MarkdownToImageService {
 
           body {
             background-color: #f6f8fa;
-            font-family: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', sans-serif;
+            font-family: Maple Mono NF CN, "Segoe UI", sans-serif;
             margin: 20px;
           }
 
@@ -218,14 +214,14 @@ export class MarkdownToImageService {
             background-color: #ffffff;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            font-family: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', sans-serif;
+            font-family: Maple Mono NF CN, "Segoe UI", sans-serif;
             line-height: 1.6;
           }
 
           /* 代码块使用等宽字体 */
-          .markdown-body pre, .markdown-body code {
+          /* .markdown-body pre, .markdown-body code {
             font-family: 'Consolas', 'Monaco', 'Menlo', 'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace;
-          }
+          } */
 
           h1 {
             color: #1f2328;

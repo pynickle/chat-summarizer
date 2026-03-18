@@ -179,8 +179,6 @@ export class CardRenderer {
    */
   private getStyles(): string {
     return `
-      @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
-
       * {
         margin: 0;
         padding: 0;
@@ -188,7 +186,7 @@ export class CardRenderer {
       }
 
       body {
-        font-family: 'Noto Sans SC', 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: Maple Mono NF CN, "Segoe UI", sans-serif;
         background: #f5f5f7;
         min-height: 100vh;
       }
@@ -465,7 +463,6 @@ export class CardRenderer {
         font-size: 32px;
         color: #1a1a1a;
         opacity: 0.15;
-        font-family: Georgia, serif;
       }
 
       .quote-content {

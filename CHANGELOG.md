@@ -1,3 +1,9 @@
+## [1.20.3](https://github.com/pynickle/chat-summarizer/compare/v1.20.2...v1.20.3) (2026-03-18)
+
+### 🐛 Bug Fixes
+
+* debug ([b9b875a](https://github.com/pynickle/chat-summarizer/commit/b9b875a6d7493680ecefd4f358dfe3d409945ad0))
+
 ## [1.20.2](https://github.com/pynickle/chat-summarizer/compare/v1.20.1...v1.20.2) (2026-03-18)
 
 ### 🐛 Bug Fixes

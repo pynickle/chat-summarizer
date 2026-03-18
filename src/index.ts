@@ -63,6 +63,112 @@ export function apply(ctx: Context, config: Config) {
     logger.info('存储目录初始化完成');
   };
 
+  const toRecord = (value: unknown): Record<string, unknown> | undefined => {
+    if (typeof value === 'object' && value !== null) {
+      return value as Record<string, unknown>;
+    }
+    return undefined;
+  };
+
+  const readString = (record: Record<string, unknown> | undefined, key: string): string | undefined => {
+    const value = record?.[key];
+    return typeof value === 'string' && value.trim() ? value : undefined;
+  };
+
+  const readNumber = (record: Record<string, unknown> | undefined, key: string): number | undefined => {
+    const value = record?.[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  };
+
+  const trimForLog = (text: string, maxLength: number = 1200): string => {
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...(truncated)` : text;
+  };
+
+  const stringifyUnknown = (value: unknown): string | undefined => {
+    if (typeof value === 'string') {
+      return value.trim() || undefined;
+    }
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return undefined;
+      }
+    }
+    return String(value);
+  };
+
+  const sanitizeUrlForLog = (url: string): string => {
+    try {
+      const parsed = new URL(url);
+      return `${parsed.origin}${parsed.pathname}`;
+    } catch {
+      return url.replace(/[?#].*$/u, '');
+    }
+  };
+
+  const extractHttpErrorContext = async (
+    error: unknown
+  ): Promise<{
+    message: string;
+    statusCode?: number;
+    statusText?: string;
+    requestUrl?: string;
+    responseBody?: string;
+  }> => {
+    const root = toRecord(error);
+    const responseRecord = toRecord(root?.response);
+    const context: {
+      message: string;
+      statusCode?: number;
+      statusText?: string;
+      requestUrl?: string;
+      responseBody?: string;
+    } = {
+      message: error instanceof Error ? error.message : String(error),
+    };
+
+    context.statusCode =
+      readNumber(root, 'statusCode') ??
+      readNumber(root, 'status') ??
+      readNumber(responseRecord, 'status');
+
+    context.statusText = readString(root, 'statusText') ?? readString(responseRecord, 'statusText');
+
+    context.requestUrl =
+      readString(root, 'url') ??
+      readString(responseRecord, 'url') ??
+      readString(toRecord(responseRecord?.headers), 'x-request-url');
+
+    const responseTextFn = responseRecord?.text;
+    const responseCloneFn = responseRecord?.clone;
+    if (typeof responseTextFn === 'function' && typeof responseCloneFn === 'function') {
+      try {
+        const clonedResponse = responseCloneFn.call(responseRecord) as { text: () => Promise<string> };
+        const body = await clonedResponse.text();
+        if (body.trim()) {
+          context.responseBody = trimForLog(body);
+        }
+      } catch {}
+    }
+
+    if (!context.responseBody) {
+      const fallback =
+        stringifyUnknown(root?.responseBody) ??
+        stringifyUnknown(root?.responseText) ??
+        stringifyUnknown(root?.data) ??
+        stringifyUnknown(responseRecord?.body);
+      if (fallback) {
+        context.responseBody = trimForLog(fallback);
+      }
+    }
+
+    return context;
+  };
+
   // 检查是否应该监控此消息
   const shouldMonitorMessage = (session: Session): boolean => {
     if (!config.chatLog.enabled) {
@@ -1359,10 +1465,36 @@ export function apply(ctx: Context, config: Config) {
       logger.info(`正在为 ${groupInfo} 生成增强版 AI 总结 (${record.date})`);
 
       // 1. 下载聊天记录内容
-      const response = await ctx.http.get(record.s3Url, {
-        timeout: 30000,
-        responseType: 'text',
-      });
+      let response: string;
+      try {
+        response = await ctx.http.get(record.s3Url, {
+          timeout: 30000,
+          responseType: 'text',
+        });
+      } catch (downloadError) {
+        const errorContext = await extractHttpErrorContext(downloadError);
+        logger.error('下载聊天记录文件失败', {
+          recordId: record.id,
+          date: record.date,
+          guildId: record.guildId || 'private',
+          s3Url: sanitizeUrlForLog(record.s3Url),
+          message: errorContext.message,
+          statusCode: errorContext.statusCode,
+          statusText: errorContext.statusText,
+          requestUrl: errorContext.requestUrl,
+          responseBody: errorContext.responseBody,
+        });
+
+        const statusLabel = errorContext.statusCode
+          ? `HTTP ${errorContext.statusCode}`
+          : '未知状态';
+        const statusText = errorContext.statusText ? ` ${errorContext.statusText}` : '';
+        const detail = errorContext.responseBody
+          ? `，响应详情：${errorContext.responseBody}`
+          : '';
+
+        throw new Error(`下载聊天记录文件失败（${statusLabel}${statusText}）${detail}`);
+      }
 
       if (!response) {
         throw new Error('无法下载聊天记录文件');

@@ -70,12 +70,18 @@ export function apply(ctx: Context, config: Config) {
     return undefined;
   };
 
-  const readString = (record: Record<string, unknown> | undefined, key: string): string | undefined => {
+  const readString = (
+    record: Record<string, unknown> | undefined,
+    key: string
+  ): string | undefined => {
     const value = record?.[key];
     return typeof value === 'string' && value.trim() ? value : undefined;
   };
 
-  const readNumber = (record: Record<string, unknown> | undefined, key: string): number | undefined => {
+  const readNumber = (
+    record: Record<string, unknown> | undefined,
+    key: string
+  ): number | undefined => {
     const value = record?.[key];
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
   };
@@ -147,7 +153,9 @@ export function apply(ctx: Context, config: Config) {
     const responseCloneFn = responseRecord?.clone;
     if (typeof responseTextFn === 'function' && typeof responseCloneFn === 'function') {
       try {
-        const clonedResponse = responseCloneFn.call(responseRecord) as { text: () => Promise<string> };
+        const clonedResponse = responseCloneFn.call(responseRecord) as {
+          text: () => Promise<string>;
+        };
         const body = await clonedResponse.text();
         if (body.trim()) {
           context.responseBody = trimForLog(body);
@@ -1449,8 +1457,8 @@ export function apply(ctx: Context, config: Config) {
     record: ChatLogFileRecord,
     skipPush: boolean = false
   ): Promise<string | undefined> => {
-    if (!record.s3Url) {
-      logger.warn(`记录 ${record.id} 没有 S3 URL，跳过`);
+    if (!record.s3Key && !record.s3Url) {
+      logger.warn(`记录 ${record.id} 没有可用的 S3 键或 URL，跳过`);
       return;
     }
 
@@ -1464,36 +1472,63 @@ export function apply(ctx: Context, config: Config) {
       const groupInfo = record.guildId ? `群组 ${record.guildId}` : '私聊';
       logger.info(`正在为 ${groupInfo} 生成增强版 AI 总结 (${record.date})`);
 
-      // 1. 下载聊天记录内容
-      let response: string;
-      try {
-        response = await ctx.http.get(record.s3Url, {
-          timeout: 30000,
-          responseType: 'text',
-        });
-      } catch (downloadError) {
-        const errorContext = await extractHttpErrorContext(downloadError);
-        logger.error('下载聊天记录文件失败', {
-          recordId: record.id,
-          date: record.date,
-          guildId: record.guildId || 'private',
-          s3Url: sanitizeUrlForLog(record.s3Url),
-          message: errorContext.message,
-          statusCode: errorContext.statusCode,
-          statusText: errorContext.statusText,
-          requestUrl: errorContext.requestUrl,
-          responseBody: errorContext.responseBody,
-        });
+      let response = '';
+      let sdkDownloadError: string | undefined;
 
-        const statusLabel = errorContext.statusCode
-          ? `HTTP ${errorContext.statusCode}`
-          : '未知状态';
-        const statusText = errorContext.statusText ? ` ${errorContext.statusText}` : '';
-        const detail = errorContext.responseBody
-          ? `，响应详情：${errorContext.responseBody}`
-          : '';
+      if (record.s3Key) {
+        const sdkResult = await s3Uploader.downloadText(record.s3Key);
+        if (sdkResult.success && sdkResult.content) {
+          response = sdkResult.content;
+          logger.info(`聊天记录下载成功（S3 SDK 鉴权）: ${record.s3Key}`);
+        } else {
+          sdkDownloadError = sdkResult.error || '未知错误';
+          logger.warn(`S3 SDK 下载失败，将回退到 URL 下载：${sdkDownloadError}`);
+        }
+      }
 
-        throw new Error(`下载聊天记录文件失败（${statusLabel}${statusText}）${detail}`);
+      if (!response) {
+        if (!record.s3Url) {
+          const sdkDetail = sdkDownloadError ? `，S3 SDK 错误：${sdkDownloadError}` : '';
+          throw new Error(`下载聊天记录文件失败（无可用 S3 URL）${sdkDetail}`);
+        }
+
+        try {
+          response = await ctx.http.get(record.s3Url, {
+            timeout: 30000,
+            responseType: 'text',
+          });
+        } catch (downloadError) {
+          const errorContext = await extractHttpErrorContext(downloadError);
+          logger.error('下载聊天记录文件失败', {
+            recordId: record.id,
+            date: record.date,
+            guildId: record.guildId || 'private',
+            s3Key: record.s3Key,
+            s3Url: sanitizeUrlForLog(record.s3Url),
+            sdkDownloadError,
+            message: errorContext.message,
+            statusCode: errorContext.statusCode,
+            statusText: errorContext.statusText,
+            requestUrl: errorContext.requestUrl,
+            responseBody: errorContext.responseBody,
+          });
+
+          const statusLabel = errorContext.statusCode
+            ? `HTTP ${errorContext.statusCode}`
+            : '未知状态';
+          const statusText = errorContext.statusText ? ` ${errorContext.statusText}` : '';
+          const requestUrl = errorContext.requestUrl
+            ? `，请求地址：${sanitizeUrlForLog(errorContext.requestUrl)}`
+            : '';
+          const detail = errorContext.responseBody
+            ? `，响应详情：${errorContext.responseBody}`
+            : '';
+          const sdkDetail = sdkDownloadError ? `，S3 SDK 错误：${sdkDownloadError}` : '';
+
+          throw new Error(
+            `下载聊天记录文件失败（${statusLabel}${statusText}）${requestUrl}${detail}${sdkDetail}`
+          );
+        }
       }
 
       if (!response) {

@@ -160,7 +160,9 @@ export class AIService {
     context.code = this.readString(root, 'code') ?? this.readString(cause, 'code');
 
     context.requestUrl =
-      this.readString(root, 'url') ?? this.readString(cause, 'url') ?? this.readString(response, 'url');
+      this.readString(root, 'url') ??
+      this.readString(cause, 'url') ??
+      this.readString(response, 'url');
 
     context.responseBody =
       this.stringifyUnknown(root?.responseBody) ??

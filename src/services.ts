@@ -35,9 +35,21 @@ export class LoggerService {
 
   error(message: string, error?: any): void {
     if (error) {
-      this.logger.error(
-        `${message}\n错误详情：${error?.message || '未知错误'}\n堆栈：${error?.stack || '无堆栈信息'}`
-      );
+      if (error instanceof Error) {
+        this.logger.error(
+          `${message}\n错误详情：${error.message || '未知错误'}\n堆栈：${error.stack || '无堆栈信息'}`
+        );
+        return;
+      }
+
+      let detail = '';
+      try {
+        detail = JSON.stringify(error, null, 2);
+      } catch {
+        detail = String(error);
+      }
+
+      this.logger.error(`${message}\n错误详情：${detail || '未知错误'}\n堆栈：无堆栈信息`);
     } else {
       this.logger.error(message);
     }

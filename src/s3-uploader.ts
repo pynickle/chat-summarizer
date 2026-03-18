@@ -824,4 +824,91 @@ export class S3Uploader {
       return { success: false, error: handleError(error, '下载文件失败') };
     }
   }
+
+  public async downloadText(
+    s3Key: string
+  ): Promise<{ success: boolean; content?: string; error?: string }> {
+    try {
+      const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+
+      let fullKey = s3Key;
+      if (this.config.pathPrefix && this.config.pathPrefix.trim() !== '') {
+        const cleanPrefix = this.config.pathPrefix.replace(/^\/+|\/+$/g, '');
+        if (cleanPrefix && !s3Key.startsWith(cleanPrefix + '/')) {
+          fullKey = `${cleanPrefix}/${s3Key}`;
+        }
+      }
+
+      const command = new GetObjectCommand({
+        Bucket: this.config.bucket,
+        Key: fullKey,
+      });
+
+      const response = await this.client.send(command);
+      const body = response.Body as unknown;
+
+      if (!body) {
+        return { success: false, error: '下载内容为空' };
+      }
+
+      if (
+        typeof (body as { transformToString?: (encoding?: string) => Promise<string> })
+          .transformToString === 'function'
+      ) {
+        const content = await (
+          body as { transformToString: (encoding?: string) => Promise<string> }
+        ).transformToString('utf-8');
+        return { success: true, content };
+      }
+
+      const chunks: Uint8Array[] = [];
+      const reader = body as {
+        getReader?: () => { read: () => Promise<{ done: boolean; value?: Uint8Array }> };
+        read?: () => unknown;
+        on?: (event: string, cb: (arg?: unknown) => void) => void;
+      };
+
+      if (reader.getReader) {
+        const readerInstance = reader.getReader();
+        while (true) {
+          const { done, value } = await readerInstance.read();
+          if (done) break;
+          if (value) chunks.push(value);
+        }
+      } else if (reader.read && reader.on) {
+        await new Promise<void>((resolve, reject) => {
+          (
+            body as {
+              on: (event: string, cb: (arg?: unknown) => void) => void;
+            }
+          ).on('data', (chunk: unknown) => {
+            if (chunk instanceof Buffer) {
+              chunks.push(new Uint8Array(chunk));
+            } else if (chunk instanceof Uint8Array) {
+              chunks.push(chunk);
+            } else {
+              chunks.push(new Uint8Array(Buffer.from(String(chunk))));
+            }
+          });
+          (
+            body as {
+              on: (event: string, cb: (arg?: unknown) => void) => void;
+            }
+          ).on('end', () => resolve());
+          (
+            body as {
+              on: (event: string, cb: (arg?: unknown) => void) => void;
+            }
+          ).on('error', (err: unknown) => reject(err));
+        });
+      } else {
+        chunks.push(new Uint8Array(Buffer.from(body as Buffer | string)));
+      }
+
+      const content = Buffer.concat(chunks).toString('utf-8');
+      return { success: true, content };
+    } catch (error: any) {
+      return { success: false, error: handleError(error, '下载文本失败') };
+    }
+  }
 }

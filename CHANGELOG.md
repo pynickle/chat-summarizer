@@ -1,3 +1,9 @@
+## [1.22.3](https://github.com/pynickle/chat-summarizer/compare/v1.22.2...v1.22.3) (2026-03-19)
+
+### 🐛 Bug Fixes
+
+* fix deprecated url / private bucket ([268a056](https://github.com/pynickle/chat-summarizer/commit/268a0567fed1a4ccc6856f2f858eadbaef382381))
+
 ## [1.22.2](https://github.com/pynickle/chat-summarizer/compare/v1.22.1...v1.22.2) (2026-03-19)
 
 ### 🐛 Bug Fixes

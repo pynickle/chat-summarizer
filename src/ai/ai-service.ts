@@ -35,6 +35,13 @@ type PreparedChatPayload = {
   mediaParts: Array<ImagePart | FilePart>;
 };
 
+type MediaBuildResult = {
+  mediaParts: Array<ImagePart | FilePart>;
+  expiredImageUrls: string[];
+};
+
+const EXPIRED_QQ_IMAGE_MARKER = '[图片已失效:qq_download_url_expired]';
+
 export class AIService {
   private logger: Logger;
   private globalConfig: Config;
@@ -238,8 +245,96 @@ export class AIService {
     }
   }
 
-  private async buildMediaParts(records: MessageRecord[]): Promise<Array<ImagePart | FilePart>> {
-    const parts: Array<ImagePart | FilePart> = [];
+  private isQQTemporaryImageUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      const isNTQQDownload =
+        parsed.hostname === 'multimedia.nt.qq.com.cn' && parsed.pathname === '/download';
+      const isGchatQpic =
+        parsed.hostname === 'gchat.qpic.cn' && parsed.pathname.startsWith('/gchatpic_new/');
+      return isNTQQDownload || isGchatQpic;
+    } catch {
+      return false;
+    }
+  }
+
+  private isLikelyImageContentType(contentType: string): boolean {
+    return contentType.startsWith('image/') || contentType.includes('application/octet-stream');
+  }
+
+  private isQQDownloadExpiredPayload(payload: string): boolean {
+    try {
+      const parsed = JSON.parse(payload) as {
+        retcode?: unknown;
+        retmsg?: unknown;
+      };
+
+      const retCode = typeof parsed.retcode === 'number' ? parsed.retcode : null;
+      const retMsg = typeof parsed.retmsg === 'string' ? parsed.retmsg.toLowerCase() : '';
+
+      return retCode === -5503007 || retMsg.includes('download url has expired');
+    } catch {
+      return false;
+    }
+  }
+
+  private async isQQTemporaryImageExpired(url: string): Promise<boolean> {
+    if (!this.isQQTemporaryImageUrl(url)) {
+      return false;
+    }
+
+    const abortController = new AbortController();
+    const timer = setTimeout(() => abortController.abort(), 8000);
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: abortController.signal,
+        redirect: 'follow',
+        headers: {
+          Accept: 'image/*,application/json;q=0.9,*/*;q=0.1',
+        },
+      });
+
+      const contentType = response.headers.get('content-type')?.toLowerCase() || '';
+      const isLikelyImage = this.isLikelyImageContentType(contentType);
+
+      if (response.ok && !isLikelyImage) {
+        return true;
+      }
+
+      if (!response.ok && response.status >= 400 && response.status < 500) {
+        const body = await response.text();
+        if (this.isQQDownloadExpiredPayload(body)) {
+          return true;
+        }
+        return !isLikelyImage;
+      }
+
+      const shouldReadAsText =
+        contentType.includes('application/json') ||
+        contentType.includes('text/json') ||
+        contentType.includes('text/plain');
+
+      if (!shouldReadAsText) {
+        return false;
+      }
+
+      const body = await response.text();
+      return this.isQQDownloadExpiredPayload(body);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        this.logger.warn('检测 QQ 临时图片链接是否过期超时，保留原链接');
+      }
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async buildMediaParts(records: MessageRecord[]): Promise<MediaBuildResult> {
+    const mediaParts: Array<ImagePart | FilePart> = [];
+    const expiredImageUrls: string[] = [];
 
     for (const record of records) {
       const imageUrls = this.parseUrlArray(record.imageUrls);
@@ -247,8 +342,14 @@ export class AIService {
 
       for (const imageUrl of imageUrls) {
         const accessibleUrl = await this.toAccessibleUrl(imageUrl);
+        const isExpired = await this.isQQTemporaryImageExpired(accessibleUrl);
+        if (isExpired) {
+          expiredImageUrls.push(imageUrl, accessibleUrl);
+          continue;
+        }
+
         try {
-          parts.push({
+          mediaParts.push({
             type: 'image',
             image: new URL(accessibleUrl),
           });
@@ -264,7 +365,7 @@ export class AIService {
 
         const accessibleUrl = await this.toAccessibleUrl(fileUrl);
         try {
-          parts.push({
+          mediaParts.push({
             type: 'file',
             data: new URL(accessibleUrl),
             mediaType: this.inferAudioMediaType(fileUrl),
@@ -275,7 +376,33 @@ export class AIService {
       }
     }
 
-    return parts;
+    return {
+      mediaParts,
+      expiredImageUrls,
+    };
+  }
+
+  private applyExpiredImageMarkers(textContent: string, expiredImageUrls: string[]): string {
+    if (expiredImageUrls.length === 0) {
+      return textContent;
+    }
+
+    const uniqueUrls = Array.from(new Set(expiredImageUrls.filter(Boolean)));
+    let sanitizedText = textContent;
+
+    for (const expiredUrl of uniqueUrls) {
+      sanitizedText = sanitizedText.split(expiredUrl).join(EXPIRED_QQ_IMAGE_MARKER);
+    }
+
+    const markerSummary =
+      `\n\n[图片处理标记] 检测到 ${uniqueUrls.length} 个 QQ 临时图片链接已失效，` +
+      `已从多模态输入中移除，统一标记为 ${EXPIRED_QQ_IMAGE_MARKER}`;
+
+    this.logger.warn(
+      `检测到 ${uniqueUrls.length} 个 QQ 临时图片链接已失效，跳过传递给 AI（使用标记 ${EXPIRED_QQ_IMAGE_MARKER}）`
+    );
+
+    return sanitizedText + markerSummary;
   }
 
   private async prepareChatPayload(content: string): Promise<PreparedChatPayload> {
@@ -283,17 +410,29 @@ export class AIService {
     const useTextFormat = this.config.formatChatContentAsText !== false;
     const textContent = records && useTextFormat ? this.formatRecordsAsText(records) : content;
 
-    if (!records || !this.isResponsesContentBlocksEnabled()) {
+    if (!records) {
       return {
         textContent,
         mediaParts: [],
       };
     }
 
-    const mediaParts = await this.buildMediaParts(records);
-    return {
+    const mediaBuildResult = await this.buildMediaParts(records);
+    const sanitizedText = this.applyExpiredImageMarkers(
       textContent,
-      mediaParts,
+      mediaBuildResult.expiredImageUrls
+    );
+
+    if (!this.isResponsesContentBlocksEnabled()) {
+      return {
+        textContent: sanitizedText,
+        mediaParts: [],
+      };
+    }
+
+    return {
+      textContent: sanitizedText,
+      mediaParts: mediaBuildResult.mediaParts,
     };
   }
 

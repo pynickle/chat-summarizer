@@ -2,6 +2,22 @@ import { Session, h } from 'koishi';
 import { parseDate } from './common';
 import { CommandDeps } from './types';
 
+async function resolveSummaryImageUrl(
+  deps: CommandDeps,
+  storedUrl: string,
+  expiresInSeconds: number = 3600
+): Promise<string> {
+  if (!deps.s3Uploader) {
+    return storedUrl;
+  }
+
+  try {
+    return await deps.s3Uploader.getAccessibleUrlByStoredUrl(storedUrl, expiresInSeconds);
+  } catch {
+    return storedUrl;
+  }
+}
+
 export async function handleSummaryCheckCommand(
   deps: CommandDeps,
   session: Session,
@@ -134,9 +150,10 @@ export async function handleSummaryRetryCommand(
 
       const groupInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
       if (imageUrl) {
+        const accessibleImageUrl = await resolveSummaryImageUrl(deps, imageUrl);
         await sendMessage(session, [
           h.text(`✅ ${groupInfo} 在 ${date} 的 AI 总结重新生成完成\n\n`),
-          h.image(imageUrl),
+          h.image(accessibleImageUrl),
         ]);
       } else {
         await sendMessage(session, [h.text(`✅ ${groupInfo} 在 ${date} 的 AI 总结重新生成完成`)]);
@@ -164,7 +181,8 @@ export async function handleSummaryRetryCommand(
         const imageUrl = await generateSummaryForRecord(record, true);
         successCount++;
         if (imageUrl) {
-          generatedUrls.push({ guildId: record.guildId, url: imageUrl });
+          const accessibleImageUrl = await resolveSummaryImageUrl(deps, imageUrl);
+          generatedUrls.push({ guildId: record.guildId, url: accessibleImageUrl });
         }
       } catch (error: any) {
         console.error(`重新生成总结失败 (${record.guildId || 'private'}):`, error);
@@ -259,17 +277,19 @@ export async function handleSummaryGetCommand(
       return;
     }
 
+    const accessibleSummaryImageUrl = await resolveSummaryImageUrl(deps, summaryImageUrl);
+
     try {
       const groupInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
       await sendMessage(session, [
         h.text(`📊 ${groupInfo} - ${parsedDate} AI 总结：`),
-        h.image(summaryImageUrl),
+        h.image(accessibleSummaryImageUrl),
       ]);
     } catch (error: any) {
       console.error('发送总结图片失败：', error);
       await sendMessage(session, [
         h.text(
-          `❌ 发送图片失败：${error?.message || '未知错误'}\n\n🔗 图片链接：${summaryImageUrl}`
+          `❌ 发送图片失败：${error?.message || '未知错误'}\n\n🔗 图片链接：${accessibleSummaryImageUrl}`
         ),
       ]);
     }

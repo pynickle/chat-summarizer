@@ -225,13 +225,23 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
         return;
       }
 
+      let pushImageUrl = summaryImageUrl;
+      const s3Uploader = s3Service.getUploader();
+      if (s3Uploader) {
+        try {
+          pushImageUrl = await s3Uploader.getAccessibleUrlByStoredUrl(summaryImageUrl);
+        } catch (error) {
+          logger.warn(`生成总结推送可访问链接失败，将回退原链接: ${error}`);
+        }
+      }
+
       logger.info(`开始推送群组 ${groupId} 的 AI 总结`);
       if (effectiveConfig.pushToSelf) {
-        await pushSummaryToGroup(summaryImageUrl, groupId);
+        await pushSummaryToGroup(pushImageUrl, groupId);
       }
 
       for (const target of effectiveConfig.forwardGroups || []) {
-        await pushSummaryToGroup(summaryImageUrl, target.groupId);
+        await pushSummaryToGroup(pushImageUrl, target.groupId);
       }
     } catch (error: any) {
       logger.error(`推送群组 ${groupId} 的总结失败`, error);

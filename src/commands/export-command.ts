@@ -27,7 +27,8 @@ export async function handleExportCommand(
   enableSummarize: boolean = false,
   enableImageSummary: boolean = false
 ): Promise<void> {
-  const { isAdmin, sendMessage, aiService, exportManager, mdToImageService, config } = deps;
+  const { isAdmin, sendMessage, aiService, exportManager, mdToImageService, config, s3Uploader } =
+    deps;
 
   try {
     if (!isAdmin(session.userId)) {
@@ -97,8 +98,17 @@ export async function handleExportCommand(
       return;
     }
 
+    let downloadUrl = result.s3Url;
+    if (s3Uploader && result.s3Key) {
+      try {
+        downloadUrl = await s3Uploader.getAccessibleUrl(result.s3Key);
+      } catch (error) {
+        console.warn('生成导出文件可访问链接失败，回退到原始链接:', error);
+      }
+    }
+
     let responseMessage = result.message || '导出成功！';
-    responseMessage += `\n\n📥 下载链接：${result.s3Url}`;
+    responseMessage += `\n\n📥 下载链接：${downloadUrl}`;
 
     if (enableSummarize) {
       let aiTempMessage: string[] = [];
@@ -107,7 +117,7 @@ export async function handleExportCommand(
         const fileContent =
           config.s3.isPrivate && result.s3Key
             ? await exportManager.downloadTextByS3Key(result.s3Key)
-            : await downloadExportContent(result.s3Url);
+            : await downloadExportContent(downloadUrl);
 
         if (!fileContent) {
           responseMessage += '\n\n⚠️ 无法下载导出文件进行 AI 总结';

@@ -3,7 +3,7 @@ import { safeJsonParse } from '../core/utils';
 import { CommandDeps } from './types';
 
 export async function handleGetUrlCommand(deps: CommandDeps, session: Session): Promise<void> {
-  const { ctx, config, isAdmin, sendMessage } = deps;
+  const { ctx, config, isAdmin, s3Uploader, sendMessage } = deps;
 
   try {
     if (!isAdmin(session.userId)) {
@@ -48,9 +48,17 @@ export async function handleGetUrlCommand(deps: CommandDeps, session: Session): 
 
     if (imageRecords.length > 0) {
       responseContent += '🖼️ 图片链接:\n';
-      imageRecords.forEach((img, index) => {
-        responseContent += `${index + 1}. ${img.s3Url}\n`;
-      });
+      for (const [index, img] of imageRecords.entries()) {
+        let accessibleUrl = img.s3Url;
+        if (s3Uploader) {
+          try {
+            accessibleUrl = await s3Uploader.getAccessibleUrl(img.s3Key);
+          } catch {
+            accessibleUrl = img.s3Url;
+          }
+        }
+        responseContent += `${index + 1}. ${accessibleUrl}\n`;
+      }
       hasContent = true;
     }
 
@@ -59,12 +67,20 @@ export async function handleGetUrlCommand(deps: CommandDeps, session: Session): 
         responseContent += '\n';
       }
       responseContent += '📁 文件链接:\n';
-      fileRecords.forEach((file, index) => {
-        responseContent += `${index + 1}. ${file.fileName}\n${file.s3Url}\n`;
+      for (const [index, file] of fileRecords.entries()) {
+        let accessibleUrl = file.s3Url;
+        if (s3Uploader) {
+          try {
+            accessibleUrl = await s3Uploader.getAccessibleUrl(file.s3Key);
+          } catch {
+            accessibleUrl = file.s3Url;
+          }
+        }
+        responseContent += `${index + 1}. ${file.fileName}\n${accessibleUrl}\n`;
         if (index < fileRecords.length - 1) {
           responseContent += '\n';
         }
-      });
+      }
       hasContent = true;
     }
 

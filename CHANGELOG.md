@@ -1,3 +1,9 @@
+## [1.22.2](https://github.com/pynickle/chat-summarizer/compare/v1.22.1...v1.22.2) (2026-03-19)
+
+### 🐛 Bug Fixes
+
+* s3 url error ([b05d748](https://github.com/pynickle/chat-summarizer/commit/b05d748bcbc8da5dc1143afbafe3996114b0b350))
+
 ## [1.22.1](https://github.com/pynickle/chat-summarizer/compare/v1.22.0...v1.22.1) (2026-03-19)
 
 ### 🐛 Bug Fixes

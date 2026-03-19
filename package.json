@@ -56,7 +56,6 @@
     "service": {
       "required": [
         "database",
-        "http",
         "puppeteer"
       ]
     }

@@ -2,7 +2,7 @@ import { Schema } from 'koishi';
 import { Config, GroupConfig, ForwardTarget } from './types';
 
 export const name = 'chat-summarizer';
-export const inject = { required: ['database', 'http', 'puppeteer'] };
+export const inject = { required: ['database', 'puppeteer'] };
 
 export const ConfigSchema: Schema<Config> = Schema.object({
   chatLog: Schema.object({

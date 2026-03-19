@@ -1,8 +1,9 @@
 import { Context } from 'koishi';
-import { Config } from './types';
-import { MessageProcessor } from './message-processor';
-import { S3Uploader, S3Config } from './s3-uploader';
-import { CONSTANTS } from './config';
+import { Config } from '../core/types';
+import { MessageProcessor } from '../data/message-processor';
+import { S3Uploader, S3Config } from '../storage/s3-uploader';
+import { CONSTANTS } from '../core/config';
+import { normalizePlatformUserId } from '../core/utils';
 
 // 日志服务类
 export class LoggerService {
@@ -113,11 +114,6 @@ export class MessageProcessorService {
 
   // 处理用户 ID，去除平台前缀
   normalizeUserId(userId: string): string {
-    if (!userId) return '';
-    const colonIndex = userId.indexOf(':');
-    if (colonIndex !== -1) {
-      return userId.substring(colonIndex + 1);
-    }
-    return userId;
+    return normalizePlatformUserId(userId);
   }
 }

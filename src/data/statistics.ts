@@ -1,5 +1,5 @@
 import { Logger } from 'koishi';
-import { InteractionStatistics, ParsedMessage } from './types';
+import { InteractionStatistics, ParsedMessage } from '../core/types';
 
 export class StatisticsService {
   private logger: Logger;

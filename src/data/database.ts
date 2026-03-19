@@ -6,7 +6,7 @@ import {
   VideoRecord,
   ChatLogFileRecord,
   PluginStats,
-} from './types';
+} from '../core/types';
 
 // 扩展数据库模型
 export function extendDatabase(ctx: Context) {

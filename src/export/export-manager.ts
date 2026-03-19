@@ -1,42 +1,17 @@
 import { Context } from 'koishi';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { S3Uploader } from './s3-uploader';
+import { S3Uploader } from '../storage/s3-uploader';
 import {
   safeJsonParse,
   getDateStringInUTC8,
   formatDateInUTC8,
   replaceImageUrl,
   formatDateSimple,
-} from './utils';
+} from '../core/utils';
+import { ChatMessage, ExportRequest, ExportResult, ParsedTimeRange } from './types';
 
-export interface ExportRequest {
-  guildId?: string; // 群组 ID，undefined 表示私聊
-  timeRange: string; // 时间范围
-  format: 'json' | 'txt' | 'csv';
-  messageTypes?: string[]; // 要导出的消息类型，默认为所有类型
-}
-
-export interface ExportResult {
-  success: boolean;
-  s3Url?: string;
-  error?: string;
-  message?: string;
-}
-
-export interface ParsedTimeRange {
-  startDate: Date;
-  endDate: Date;
-  dateStrings: string[]; // 需要的日期字符串列表
-}
-
-export interface ChatMessage {
-  time: string;
-  username: string;
-  content: string;
-  guildId?: string;
-  messageType: string;
-}
+export type { ChatMessage, ExportRequest, ExportResult, ParsedTimeRange };
 
 export class ExportManager {
   constructor(

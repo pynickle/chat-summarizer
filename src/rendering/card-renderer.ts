@@ -1,0 +1,483 @@
+import { Context, Logger } from 'koishi';
+import { DailyReport, AISummaryOutput, InteractionStatistics } from '../core/types';
+import { getCardStyles } from './card-styles';
+import { renderHeaderCard } from './card-header';
+import { cleanUrlsAndImages, escapeHtml, getPeriodDescription } from './card-text-utils';
+import { convertEmojiToImages } from './card-emoji';
+
+export class CardRenderer {
+  private logger: Logger;
+  private isRendering: boolean = false;
+  private renderQueue: Array<() => Promise<void>> = [];
+
+  constructor(private ctx: Context) {
+    this.logger = ctx.logger('chat-summarizer:card-renderer');
+  }
+
+  /**
+   * 等待渲染槽位
+   */
+  private async waitForRenderSlot(): Promise<void> {
+    if (!this.isRendering) {
+      this.isRendering = true;
+      return;
+    }
+
+    this.logger.info('渲染进程繁忙，加入等待队列...');
+    return new Promise((resolve) => {
+      this.renderQueue.push(async () => {
+        this.isRendering = true;
+        resolve();
+      });
+    });
+  }
+
+  /**
+   * 释放渲染槽位
+   */
+  private releaseRenderSlot(): void {
+    this.isRendering = false;
+    const nextTask = this.renderQueue.shift();
+    if (nextTask) {
+      this.logger.info('处理队列中的下一个渲染任务');
+      nextTask();
+    }
+  }
+
+  /**
+   * 渲染完整的群日报
+   */
+  async renderDailyReport(report: DailyReport): Promise<Buffer> {
+    const startTime = Date.now();
+
+    await this.waitForRenderSlot();
+    this.logger.info('开始渲染群日报卡片');
+
+    try {
+      const html = this.generateHTML(report);
+      const puppeteer = (this.ctx as any).puppeteer;
+
+      const imageBuffer = await puppeteer.render(html, async (page, next) => {
+        await page.setViewport({
+          width: 800,
+          height: 1000,
+          deviceScaleFactor: 2,
+        });
+
+        await page.waitForSelector('.daily-report-container');
+
+        // 等待图片加载
+        await page.evaluate(() => {
+          return new Promise((resolve) => {
+            const images = document.querySelectorAll('img');
+            let loaded = 0;
+            const total = images.length;
+
+            if (total === 0) {
+              resolve(undefined);
+              return;
+            }
+
+            const checkDone = () => {
+              loaded++;
+              if (loaded >= total) resolve(undefined);
+            };
+
+            images.forEach((img) => {
+              if (img.complete) {
+                checkDone();
+              } else {
+                img.onload = checkDone;
+                img.onerror = checkDone;
+              }
+            });
+
+            setTimeout(() => resolve(undefined), 5000);
+          });
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        const element = await page.$('.daily-report-container');
+        if (!element) {
+          throw new Error('无法找到报告容器');
+        }
+
+        const boundingBox = await element.boundingBox();
+        if (!boundingBox) {
+          throw new Error('无法获取容器尺寸');
+        }
+
+        const screenshot = await page.screenshot({
+          type: 'png',
+          optimizeForSpeed: false,
+          clip: {
+            x: Math.max(0, boundingBox.x),
+            y: Math.max(0, boundingBox.y),
+            width: boundingBox.width,
+            height: boundingBox.height,
+          },
+        });
+
+        return screenshot;
+      });
+
+      const totalTime = Date.now() - startTime;
+      this.logger.info('群日报渲染成功', { renderTime: totalTime + 'ms' });
+
+      return Buffer.from(imageBuffer, 'base64');
+    } catch (error) {
+      this.logger.error('群日报渲染失败', error);
+      throw error;
+    } finally {
+      this.releaseRenderSlot();
+    }
+  }
+
+  /**
+   * 生成完整的 HTML
+   */
+  private generateHTML(report: DailyReport): string {
+    const styles = getCardStyles();
+    const headerCard = renderHeaderCard(report);
+    const summaryCard = this.renderSummaryCard(report.aiContent);
+    const hotTopicsCard = this.renderHotTopicsCard(report.aiContent.hotTopics);
+    const importantInfoCard = this.renderImportantInfoCard(report.aiContent.importantInfo);
+    const quotesCard = this.renderQuotesCard(report.aiContent.quotes);
+    const activityRankingCard = this.renderActivityRankingCard(report.statistics);
+    const hourlyDistributionCard = this.renderHourlyDistributionCard(report.statistics);
+    const interactionsCard = this.renderInteractionsCard(report.statistics.interactions);
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>${styles}</style>
+      </head>
+      <body>
+        <div class="daily-report-container">
+          ${headerCard}
+          ${summaryCard}
+          ${hotTopicsCard}
+          ${importantInfoCard}
+          ${quotesCard}
+          ${activityRankingCard}
+          ${hourlyDistributionCard}
+          ${interactionsCard}
+          <div class="footer">
+            <span>Generated by Chat Summarizer · ${new Date(report.metadata.generatedAt).toLocaleString('zh-CN')}</span>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // 将 emoji 转换为 CDN 图片
+    return convertEmojiToImages(html);
+  }
+
+
+  /**
+   * 渲染总结卡片
+   */
+  private renderSummaryCard(aiContent: AISummaryOutput): string {
+    const highlightsHtml = aiContent.summary.highlights
+      .map(
+        (h) =>
+          `<div class="highlight-item"><span class="highlight-bullet">•</span><span>${escapeHtml(h)}</span></div>`
+      )
+      .join('');
+
+    return `
+      <div class="card">
+        <div class="card-title"><span class="icon">📝</span>今日总结</div>
+        <div class="summary-overview">${escapeHtml(aiContent.summary.overview)}</div>
+        <div class="summary-highlights">${highlightsHtml}</div>
+        <div class="atmosphere-tag">🎭 ${escapeHtml(aiContent.summary.atmosphere)}</div>
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染热点话题卡片
+   */
+  private renderHotTopicsCard(hotTopics: AISummaryOutput['hotTopics']): string {
+    if (!hotTopics || hotTopics.length === 0) {
+      return '';
+    }
+
+    const topicsHtml = hotTopics
+      .map((topic) => {
+        const heatClass = `heat-${topic.heatLevel}`;
+        const heatText =
+          topic.heatLevel === 'high'
+            ? '🔥 热门'
+            : topic.heatLevel === 'medium'
+              ? '⭐ 活跃'
+              : '💬 一般';
+        const participantsHtml = topic.participants
+          .slice(0, 5)
+          .map((p) => `<span class="participant-tag">${escapeHtml(p)}</span>`)
+          .join('');
+
+        return `
+        <div class="hot-topic">
+          <div class="hot-topic-header">
+            <span class="hot-topic-name">${escapeHtml(topic.topic)}</span>
+            <span class="heat-tag ${heatClass}">${heatText}</span>
+          </div>
+          <div class="hot-topic-desc">${escapeHtml(topic.description)}</div>
+          <div class="hot-topic-participants">${participantsHtml}</div>
+        </div>
+      `;
+      })
+      .join('');
+
+    return `
+      <div class="card">
+        <div class="card-title"><span class="icon">🔥</span>热点话题</div>
+        ${topicsHtml}
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染重要信息卡片
+   */
+  private renderImportantInfoCard(importantInfo: AISummaryOutput['importantInfo']): string {
+    if (!importantInfo || importantInfo.length === 0) {
+      return '';
+    }
+
+    const typeIcons: Record<string, { icon: string; class: string }> = {
+      announcement: { icon: '📢', class: 'type-announcement' },
+      link: { icon: '🔗', class: 'type-link' },
+      resource: { icon: '📦', class: 'type-resource' },
+      decision: { icon: '✅', class: 'type-decision' },
+      other: { icon: '📌', class: 'type-other' },
+    };
+
+    const itemsHtml = importantInfo
+      .map((info) => {
+        const typeInfo = typeIcons[info.type] || typeIcons.other;
+        const sourceHtml = info.source
+          ? `<div class="info-source">—— ${escapeHtml(info.source)}</div>`
+          : '';
+        const cleanedContent = cleanUrlsAndImages(info.content);
+        // 如果清理后内容为空，跳过这条
+        if (!cleanedContent) return '';
+
+        return `
+        <div class="important-item">
+          <div class="info-type-icon ${typeInfo.class}">${typeInfo.icon}</div>
+          <div class="info-content">
+            ${escapeHtml(cleanedContent)}
+            ${sourceHtml}
+          </div>
+        </div>
+      `;
+      })
+      .filter((html) => html)
+      .join('');
+
+    // 如果所有条目都被过滤掉了，不显示卡片
+    if (!itemsHtml) {
+      return '';
+    }
+
+    return `
+      <div class="card">
+        <div class="card-title"><span class="icon">📌</span>重要信息</div>
+        ${itemsHtml}
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染金句卡片
+   */
+  private renderQuotesCard(quotes: AISummaryOutput['quotes']): string {
+    if (!quotes || quotes.length === 0) {
+      return '';
+    }
+
+    const quotesHtml = quotes
+      .map(
+        (quote) => `
+      <div class="quote-item">
+        <span class="quote-mark">"</span>
+        <div class="quote-content">${escapeHtml(quote.content)}</div>
+        <div class="quote-author">—— ${escapeHtml(quote.author)}</div>
+      </div>
+    `
+      )
+      .join('');
+
+    return `
+      <div class="card">
+        <div class="card-title"><span class="icon">💬</span>金句精选</div>
+        ${quotesHtml}
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染活跃排行卡片
+   */
+  private renderActivityRankingCard(statistics: InteractionStatistics): string {
+    const ranking = statistics.activityRanking;
+    if (!ranking || ranking.length === 0) {
+      return '';
+    }
+
+    const maxCount = ranking[0]?.messageCount || 1;
+
+    const rankingsHtml = ranking
+      .slice(0, 10)
+      .map((item) => {
+        const percentage = Math.round((item.messageCount / maxCount) * 100);
+        let rankClass = 'rank-other';
+        let rankIcon = item.rank.toString();
+
+        if (item.rank === 1) {
+          rankClass = 'rank-1';
+          rankIcon = '🥇';
+        } else if (item.rank === 2) {
+          rankClass = 'rank-2';
+          rankIcon = '🥈';
+        } else if (item.rank === 3) {
+          rankClass = 'rank-3';
+          rankIcon = '🥉';
+        }
+
+        return `
+        <div class="ranking-item">
+          <div class="rank-badge ${rankClass}">${rankIcon}</div>
+          <div class="ranking-info">
+            <div class="ranking-username">${escapeHtml(item.username)}</div>
+            <div class="ranking-bar">
+              <div class="ranking-bar-fill" style="width: ${percentage}%"></div>
+            </div>
+          </div>
+          <div class="ranking-count">${item.messageCount} 条</div>
+        </div>
+      `;
+      })
+      .join('');
+
+    return `
+      <div class="card">
+        <div class="card-title"><span class="icon">👑</span>活跃排行</div>
+        ${rankingsHtml}
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染时段分布卡片
+   */
+  private renderHourlyDistributionCard(statistics: InteractionStatistics): string {
+    const distribution = statistics.hourlyDistribution;
+    if (!distribution || distribution.length === 0) {
+      return '';
+    }
+
+    const maxCount = Math.max(...distribution.map((d) => d.count), 1);
+
+    const barsHtml = distribution
+      .map((item) => {
+        const height = Math.max((item.count / maxCount) * 100, 4);
+        return `<div class="hour-bar" style="height: ${height}%" title="${item.hour}:00 - ${item.count}条"></div>`;
+      })
+      .join('');
+
+    const labelsHtml = [0, 6, 12, 18, 23]
+      .map((h) => `<span class="hour-label">${h}</span>`)
+      .join('');
+
+    const peakHour = statistics.basicStats.peakHour;
+    const peakCount = distribution[peakHour]?.count || 0;
+    const period = getPeriodDescription(peakHour);
+
+    return `
+      <div class="card">
+        <div class="card-title"><span class="icon">📈</span>时段分布</div>
+        <div class="hourly-chart">${barsHtml}</div>
+        <div class="hour-labels">${labelsHtml}</div>
+        <div class="peak-summary">
+          📍 高峰时段：${period} ${peakHour}:00 (${peakCount} 条消息)
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染互动关系卡片
+   */
+  private renderInteractionsCard(interactions: InteractionStatistics['interactions']): string {
+    const hasMentions = interactions.mentions && interactions.mentions.length > 0;
+    const hasReplies = interactions.replies && interactions.replies.length > 0;
+
+    if (!hasMentions && !hasReplies) {
+      return '';
+    }
+
+    let contentHtml = '';
+
+    if (hasMentions) {
+      const mentionsHtml = interactions.mentions
+        .slice(0, 5)
+        .map(
+          (item) => `
+        <div class="interaction-item">
+          <span class="interaction-from">${escapeHtml(item.from)}</span>
+          <span class="interaction-arrow">→</span>
+          <span class="interaction-to">@${escapeHtml(item.to)}</span>
+          <span class="interaction-count">${item.count} 次</span>
+        </div>
+      `
+        )
+        .join('');
+
+      contentHtml += `
+        <div class="interaction-section">
+          <div class="interaction-title">📣 @提及排行</div>
+          ${mentionsHtml}
+        </div>
+      `;
+    }
+
+    if (hasReplies) {
+      const repliesHtml = interactions.replies
+        .slice(0, 5)
+        .map(
+          (item) => `
+        <div class="interaction-item">
+          <span class="interaction-from">${escapeHtml(item.from)}</span>
+          <span class="interaction-arrow">↩</span>
+          <span class="interaction-to">${escapeHtml(item.to)}</span>
+          <span class="interaction-count">${item.count} 次</span>
+        </div>
+      `
+        )
+        .join('');
+
+      contentHtml += `
+        <div class="interaction-section">
+          <div class="interaction-title">💬 回复排行</div>
+          ${repliesHtml}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="card">
+        <div class="card-title"><span class="icon">🤝</span>互动关系</div>
+        ${contentHtml}
+      </div>
+    `;
+  }
+
+}

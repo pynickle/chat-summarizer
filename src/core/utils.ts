@@ -108,6 +108,15 @@ export const safeJsonStringify = (obj: any): string => {
   }
 };
 
+export const normalizePlatformUserId = (userId: string): string => {
+  if (!userId) return '';
+  const colonIndex = userId.indexOf(':');
+  if (colonIndex !== -1) {
+    return userId.substring(colonIndex + 1);
+  }
+  return userId;
+};
+
 /**
  * 延迟执行函数
  */

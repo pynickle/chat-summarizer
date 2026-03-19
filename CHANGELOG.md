@@ -1,3 +1,9 @@
+## [1.22.1](https://github.com/pynickle/chat-summarizer/compare/v1.22.0...v1.22.1) (2026-03-19)
+
+### 🐛 Bug Fixes
+
+* fix summary push url / add presigned url test command ([f5bfb1a](https://github.com/pynickle/chat-summarizer/commit/f5bfb1a5f28376ad3cc225df2741b47a4f9c8117))
+
 ## [1.22.0](https://github.com/pynickle/chat-summarizer/compare/v1.21.0...v1.22.0) (2026-03-19)
 
 ### ✨ Features

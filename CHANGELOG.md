@@ -1,3 +1,5 @@
+## [1.22.5](https://github.com/pynickle/chat-summarizer/compare/v1.22.4...v1.22.5) (2026-03-19)
+
 ## [1.22.4](https://github.com/pynickle/chat-summarizer/compare/v1.22.3...v1.22.4) (2026-03-19)
 
 ### 🐛 Bug Fixes

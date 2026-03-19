@@ -10,12 +10,15 @@ type LoggerLike = {
 
 export function createSummaryPushService(ctx: Context, config: Config, logger: LoggerLike) {
   const pushSummaryToGroup = async (
-    imageUrl: string,
+    imageSource: string | Buffer,
     groupId: string,
     channelId?: string,
-    platform?: string
+    platform?: string,
+    contentType: string = 'image/png'
   ): Promise<boolean> => {
-    const messageElements = [h.image(imageUrl)];
+    const messageElements = [
+      Buffer.isBuffer(imageSource) ? h.image(imageSource, contentType) : h.image(imageSource),
+    ];
 
     for (const bot of ctx.bots) {
       try {
@@ -39,8 +42,9 @@ export function createSummaryPushService(ctx: Context, config: Config, logger: L
   };
 
   const pushSummaryToConfiguredGroups = async (
-    imageUrl: string,
-    sourceGroupId: string | undefined
+    imageSource: string | Buffer,
+    sourceGroupId: string | undefined,
+    contentType: string = 'image/png'
   ): Promise<void> => {
     if (!sourceGroupId) {
       if (config.debug) {
@@ -84,7 +88,7 @@ export function createSummaryPushService(ctx: Context, config: Config, logger: L
     logger.info(`开始推送群组 ${sourceGroupId} 的总结到 ${targets.length} 个目标`);
     for (const targetGroupId of targets) {
       try {
-        await pushSummaryToGroup(imageUrl, targetGroupId);
+        await pushSummaryToGroup(imageSource, targetGroupId, undefined, undefined, contentType);
       } catch (error: any) {
         logger.error(`推送到群组 ${targetGroupId} 失败`, error);
       }

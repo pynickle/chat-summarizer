@@ -9,6 +9,7 @@ import {
 } from './summary-command';
 import { handleMdTestCommand } from './mdtest-command';
 import { handleAnalysisCommand } from './analysis-command';
+import { handlePresignTestCommand } from './presign-test-command';
 
 export function registerCommands(deps: CommandDeps): void {
   const { ctx } = deps;
@@ -87,5 +88,13 @@ export function registerCommands(deps: CommandDeps): void {
     .example('cs.analysis 今天谁最活跃？')
     .action(async ({ session }, query) => {
       await handleAnalysisCommand(deps, session, query);
+    });
+
+  ctx
+    .command('cs.test.presign [expires]', '测试生成 S3 预签名链接（仅管理员可用）')
+    .example('回复一条含图片/文件消息后执行：cs.test.presign')
+    .example('cs.test.presign 3600 - 生成有效期 1 小时的预签名链接')
+    .action(async ({ session }, expires) => {
+      await handlePresignTestCommand(deps, session, expires);
     });
 }

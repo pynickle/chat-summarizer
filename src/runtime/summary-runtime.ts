@@ -142,7 +142,7 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
         await dbOps.updateChatLogFileSummaryImage(record.id!, uploadResult.url);
         logger.info(`✅ ${groupInfo} 增强版 AI 总结生成成功：${uploadResult.url}`);
         if (!skipPush) {
-          await pushSummaryToConfiguredGroups(uploadResult.url, record.guildId);
+          await pushSummaryToConfiguredGroups(imageBuffer, record.guildId, 'image/png');
         }
         return uploadResult.url;
       }

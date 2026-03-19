@@ -518,6 +518,8 @@ export class S3Uploader {
       return storedUrl;
     }
 
-    return generateSignedUrl(this.client, this.config, key, expiresInSeconds);
+    const resolvedKey = resolveObjectKey(this.config, key);
+
+    return generateSignedUrl(this.client, this.config, resolvedKey, expiresInSeconds);
   }
 }

@@ -1,3 +1,9 @@
+## [1.22.4](https://github.com/pynickle/chat-summarizer/compare/v1.22.3...v1.22.4) (2026-03-19)
+
+### 🐛 Bug Fixes
+
+* timeout trigger wrongly ([2f187a0](https://github.com/pynickle/chat-summarizer/commit/2f187a0bc36bb2eb534b8ceb65e613eb5d17f51a))
+
 ## [1.22.3](https://github.com/pynickle/chat-summarizer/compare/v1.22.2...v1.22.3) (2026-03-19)
 
 ### 🐛 Bug Fixes

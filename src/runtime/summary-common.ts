@@ -14,7 +14,10 @@ export type EffectiveGroupConfig = {
   userPromptTemplate?: string;
 };
 
-export function getEffectiveGroupConfig(config: Config, groupConfig: GroupConfig): EffectiveGroupConfig {
+export function getEffectiveGroupConfig(
+  config: Config,
+  groupConfig: GroupConfig
+): EffectiveGroupConfig {
   const defaultSummaryTime = config.ai.defaultSummaryTime || '03:00';
   const defaultPushTime = config.ai.defaultPushTime || defaultSummaryTime;
 
@@ -22,7 +25,8 @@ export function getEffectiveGroupConfig(config: Config, groupConfig: GroupConfig
     groupId: groupConfig.groupId,
     name: groupConfig.name,
     monitorEnabled: groupConfig.monitorEnabled !== false,
-    summaryEnabled: groupConfig.summaryEnabled !== undefined ? groupConfig.summaryEnabled : config.ai.enabled,
+    summaryEnabled:
+      groupConfig.summaryEnabled !== undefined ? groupConfig.summaryEnabled : config.ai.enabled,
     summaryTime: groupConfig.summaryTime || defaultSummaryTime,
     pushEnabled: groupConfig.pushEnabled !== false,
     pushTime: groupConfig.pushTime || groupConfig.summaryTime || defaultPushTime,

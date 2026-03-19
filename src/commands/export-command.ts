@@ -27,7 +27,7 @@ export async function handleExportCommand(
   enableSummarize: boolean = false,
   enableImageSummary: boolean = false
 ): Promise<void> {
-  const { isAdmin, sendMessage, aiService, exportManager, mdToImageService } = deps;
+  const { isAdmin, sendMessage, aiService, exportManager, mdToImageService, config } = deps;
 
   try {
     if (!isAdmin(session.userId)) {
@@ -36,7 +36,9 @@ export async function handleExportCommand(
     }
 
     if (!guildId || !timeRange) {
-      await sendMessage(session, [h.text('🔧 命令格式：cs.export <群组> <时间范围> [格式] [选项]')]);
+      await sendMessage(session, [
+        h.text('🔧 命令格式：cs.export <群组> <时间范围> [格式] [选项]'),
+      ]);
       return;
     }
 
@@ -102,7 +104,10 @@ export async function handleExportCommand(
       let aiTempMessage: string[] = [];
       try {
         aiTempMessage = await sendMessage(session, [h.text('📝 正在生成 AI 总结...')]);
-        const fileContent = await downloadExportContent(result.s3Url);
+        const fileContent =
+          config.s3.isPrivate && result.s3Key
+            ? await exportManager.downloadTextByS3Key(result.s3Key)
+            : await downloadExportContent(result.s3Url);
 
         if (!fileContent) {
           responseMessage += '\n\n⚠️ 无法下载导出文件进行 AI 总结';

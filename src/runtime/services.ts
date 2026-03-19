@@ -79,6 +79,7 @@ export class S3Service {
     const s3Config: S3Config = {
       region: CONSTANTS.S3_REGION,
       bucket: this.config.s3.bucket,
+      isPrivate: this.config.s3.isPrivate,
       accessKeyId: this.config.s3.accessKeyId,
       secretAccessKey: this.config.s3.secretAccessKey,
       endpoint: this.config.s3.endpoint,

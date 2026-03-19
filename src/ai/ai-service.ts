@@ -1,9 +1,9 @@
 import { Context, Logger } from 'koishi';
 import { createOpenAI } from '@ai-sdk/openai';
-import { generateText, type ModelMessage } from 'ai';
+import { generateText, type FilePart, type ImagePart, type ModelMessage, type TextPart } from 'ai';
 import { Config, AISummaryOutput } from '../core/types';
 import { handleError } from '../core/utils';
-import { STRUCTURED_SYSTEM_PROMPT } from '../core/config';
+import { CONSTANTS, STRUCTURED_SYSTEM_PROMPT } from '../core/config';
 import { extractHttpErrorContext, trimForLog } from '../core/error-utils';
 import {
   buildStructuredSummaryPrompt,
@@ -12,15 +12,38 @@ import {
   getDefaultUserPromptTemplate,
 } from './ai-prompts';
 import { getDefaultAISummaryOutput, parseStructuredResponse } from './structured-parser';
-import { analyzeChat as analyzeChatHelper, parseAnalysisQuery as parseAnalysisQueryHelper } from './analysis-service';
+import {
+  analyzeChat as analyzeChatHelper,
+  parseAnalysisQuery as parseAnalysisQueryHelper,
+} from './analysis-service';
+import { S3Uploader } from '../storage/s3-uploader';
+
+type MessageRecord = {
+  time?: string;
+  timestamp?: number;
+  userId?: string;
+  username?: string;
+  content?: string;
+  message?: string;
+  imageUrls?: unknown;
+  fileUrls?: unknown;
+  videoUrls?: unknown;
+};
+
+type PreparedChatPayload = {
+  textContent: string;
+  mediaParts: Array<ImagePart | FilePart>;
+};
 
 export class AIService {
   private logger: Logger;
   private globalConfig: Config;
+  private s3Uploader: S3Uploader | null;
 
   constructor(ctx: Context, config: Config) {
     this.logger = ctx.logger('chat-summarizer:ai');
     this.globalConfig = config;
+    this.s3Uploader = this.createInternalS3Uploader();
   }
 
   /**
@@ -88,17 +111,206 @@ export class AIService {
     return this.config.apiMode === 'responses' ? 'responses' : 'chat.completions';
   }
 
-  private buildModel() {
+  private createInternalS3Uploader(): S3Uploader | null {
+    if (
+      !this.globalConfig.s3.enabled ||
+      !this.globalConfig.s3.bucket ||
+      !this.globalConfig.s3.accessKeyId ||
+      !this.globalConfig.s3.secretAccessKey
+    ) {
+      return null;
+    }
+
+    return new S3Uploader({
+      region: CONSTANTS.S3_REGION,
+      bucket: this.globalConfig.s3.bucket,
+      isPrivate: this.globalConfig.s3.isPrivate,
+      accessKeyId: this.globalConfig.s3.accessKeyId,
+      secretAccessKey: this.globalConfig.s3.secretAccessKey,
+      endpoint: this.globalConfig.s3.endpoint,
+      pathPrefix: this.globalConfig.s3.pathPrefix,
+    });
+  }
+
+  private isResponsesContentBlocksEnabled(): boolean {
+    return this.getApiMode() === 'responses' && this.config.useResponsesContentBlocks !== false;
+  }
+
+  private isAudioUrl(url: string): boolean {
+    return /\.(mp3|wav|m4a|aac|ogg|oga|opus|flac|amr|webm)(\?|$)/i.test(url);
+  }
+
+  private inferAudioMediaType(url: string): string {
+    if (/\.wav(\?|$)/i.test(url)) return 'audio/wav';
+    if (/\.m4a(\?|$)/i.test(url)) return 'audio/mp4';
+    if (/\.aac(\?|$)/i.test(url)) return 'audio/aac';
+    if (/\.(ogg|oga)(\?|$)/i.test(url)) return 'audio/ogg';
+    if (/\.opus(\?|$)/i.test(url)) return 'audio/opus';
+    if (/\.flac(\?|$)/i.test(url)) return 'audio/flac';
+    if (/\.amr(\?|$)/i.test(url)) return 'audio/amr';
+    if (/\.webm(\?|$)/i.test(url)) return 'audio/webm';
+    return 'audio/mpeg';
+  }
+
+  private parseUrlArray(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string' && !!item.trim());
+    }
+
+    if (typeof value === 'string' && value.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((item): item is string => typeof item === 'string' && !!item.trim());
+        }
+      } catch {
+        return [];
+      }
+    }
+
+    return [];
+  }
+
+  private parseRecords(content: string): MessageRecord[] | null {
+    const trimmed = content.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed as MessageRecord[];
+        }
+      } catch {
+        return null;
+      }
+    }
+
+    const lines = content
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      return null;
+    }
+
+    const records: MessageRecord[] = [];
+
+    for (const line of lines) {
+      try {
+        const record = JSON.parse(line) as MessageRecord;
+        records.push(record);
+      } catch {
+        return null;
+      }
+    }
+
+    return records;
+  }
+
+  private formatRecordsAsText(records: MessageRecord[]): string {
+    return records
+      .map((record) => {
+        const time =
+          record.time ||
+          (typeof record.timestamp === 'number'
+            ? new Date(record.timestamp).toISOString()
+            : '未知时间');
+        const userId = record.userId || 'unknown';
+        const username = record.username || '未知用户';
+        const message = record.content || record.message || '';
+        const videos = this.parseUrlArray(record.videoUrls);
+        const videoText = videos.length > 0 ? ` | 视频链接: ${videos.join(' ')}` : '';
+
+        return `时间: ${time} | userId: ${userId} | username: ${username} | 消息: ${message}${videoText}`;
+      })
+      .join('\n');
+  }
+
+  private async toAccessibleUrl(url: string): Promise<string> {
+    if (!this.globalConfig.s3.isPrivate || !this.s3Uploader) {
+      return url;
+    }
+
+    try {
+      return await this.s3Uploader.getAccessibleUrlByStoredUrl(url);
+    } catch {
+      return url;
+    }
+  }
+
+  private async buildMediaParts(records: MessageRecord[]): Promise<Array<ImagePart | FilePart>> {
+    const parts: Array<ImagePart | FilePart> = [];
+
+    for (const record of records) {
+      const imageUrls = this.parseUrlArray(record.imageUrls);
+      const fileUrls = this.parseUrlArray(record.fileUrls);
+
+      for (const imageUrl of imageUrls) {
+        const accessibleUrl = await this.toAccessibleUrl(imageUrl);
+        try {
+          parts.push({
+            type: 'image',
+            image: new URL(accessibleUrl),
+          });
+        } catch {
+          continue;
+        }
+      }
+
+      for (const fileUrl of fileUrls) {
+        if (!this.isAudioUrl(fileUrl)) {
+          continue;
+        }
+
+        const accessibleUrl = await this.toAccessibleUrl(fileUrl);
+        try {
+          parts.push({
+            type: 'file',
+            data: new URL(accessibleUrl),
+            mediaType: this.inferAudioMediaType(fileUrl),
+          });
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    return parts;
+  }
+
+  private async prepareChatPayload(content: string): Promise<PreparedChatPayload> {
+    const records = this.parseRecords(content);
+    const useTextFormat = this.config.formatChatContentAsText !== false;
+    const textContent = records && useTextFormat ? this.formatRecordsAsText(records) : content;
+
+    if (!records || !this.isResponsesContentBlocksEnabled()) {
+      return {
+        textContent,
+        mediaParts: [],
+      };
+    }
+
+    const mediaParts = await this.buildMediaParts(records);
+    return {
+      textContent,
+      mediaParts,
+    };
+  }
+
+  private buildOpenAIProvider() {
     if (!this.config.apiKey || !this.config.apiUrl) {
       throw new Error('AI 配置不完整，请检查 API URL 和密钥');
     }
 
-    const modelName = this.config.model || 'gpt-5.4';
-    const openai = createOpenAI({
+    return createOpenAI({
       apiKey: this.config.apiKey,
       baseURL: this.config.apiUrl,
     });
+  }
 
+  private buildModel() {
+    const modelName = this.config.model || 'gpt-5.4';
+    const openai = this.buildOpenAIProvider();
     return this.getApiMode() === 'responses' ? openai.responses(modelName) : openai.chat(modelName);
   }
 
@@ -112,12 +324,24 @@ export class AIService {
     const timer = setTimeout(() => abortController.abort(), timeoutMs);
 
     try {
+      const openai = this.buildOpenAIProvider();
+      const canUseWebSearch =
+        this.getApiMode() === 'responses' && this.config.webSearchEnabled !== false;
+
       const result = await generateText({
-        model: this.buildModel(),
+        model:
+          this.getApiMode() === 'responses'
+            ? openai.responses(this.config.model || 'gpt-5.4')
+            : openai.chat(this.config.model || 'gpt-5.4'),
         messages: options.messages,
         temperature: options.temperature,
         maxOutputTokens:
           this.config.maxTokens && this.config.maxTokens > 0 ? this.config.maxTokens : undefined,
+        tools: canUseWebSearch
+          ? {
+              web_search: openai.tools.webSearch(),
+            }
+          : undefined,
         abortSignal: abortController.signal,
       });
 
@@ -180,6 +404,7 @@ export class AIService {
       const systemPrompt = groupConfig.systemPrompt || getDefaultSystemPrompt();
 
       let userPrompt: string;
+      const preparedPayload = await this.prepareChatPayload(content);
 
       if (this.config.useFileMode) {
         // 文件模式：使用云雾 API 的聊天 + 读取文件接口格式
@@ -187,18 +412,17 @@ export class AIService {
 
         // 构建文件模式的用户提示词，将内容直接包含在文本中
         const filePrompt = this.buildFilePrompt(timeRange, messageCount, guildId);
-        userPrompt = `${filePrompt}\n\n📄 **聊天记录内容：**\n\n${content}`;
+        userPrompt = `${filePrompt}\n\n📄 **聊天记录内容：**\n\n${preparedPayload.textContent}`;
       } else {
         // 传统模式：直接发送文本内容
         this.logger.debug('使用传统模式发送请求');
 
-        const userPromptTemplate =
-          groupConfig.userPromptTemplate || getDefaultUserPromptTemplate();
+        const userPromptTemplate = groupConfig.userPromptTemplate || getDefaultUserPromptTemplate();
         userPrompt = this.replaceTemplate(userPromptTemplate, {
           timeRange,
           messageCount: messageCount.toString(),
           groupInfo: this.getGroupInfo(guildId),
-          content,
+          content: preparedPayload.textContent,
         });
       }
 
@@ -219,10 +443,15 @@ export class AIService {
 
       this.logger.debug(`设置超时时间：${timeoutMs}ms`);
 
+      const userContent: string | Array<TextPart | ImagePart | FilePart> =
+        this.isResponsesContentBlocksEnabled() && preparedPayload.mediaParts.length > 0
+          ? [{ type: 'text', text: userPrompt }, ...preparedPayload.mediaParts]
+          : userPrompt;
+
       const summary = await this.generateTextWithMessages({
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
+          { role: 'user', content: userContent },
         ],
         temperature: 0.7,
         timeoutSeconds: Math.ceil(timeoutMs / 1000),
@@ -236,6 +465,7 @@ export class AIService {
         inputLength: content.length,
         outputLength: summary.length,
         fileMode: this.config.useFileMode,
+        useResponsesContentBlocks: this.isResponsesContentBlocksEnabled(),
       });
 
       return summary;
@@ -427,12 +657,14 @@ export class AIService {
       try {
         const groupInfo = this.getGroupInfo(guildId);
 
+        const preparedPayload = await this.prepareChatPayload(content);
+
         const userPrompt = buildStructuredSummaryPrompt(
           timeRange,
           messageCount,
           uniqueUsers,
           groupInfo,
-          content
+          preparedPayload.textContent
         );
 
         this.logger.debug(`发送结构化总结请求 (尝试 ${attempt}/${maxRetries})`, {
@@ -444,10 +676,15 @@ export class AIService {
 
         const timeoutSeconds = Math.max(this.config.timeout || 120, 120);
 
+        const userContent: string | Array<TextPart | ImagePart | FilePart> =
+          this.isResponsesContentBlocksEnabled() && preparedPayload.mediaParts.length > 0
+            ? [{ type: 'text', text: userPrompt }, ...preparedPayload.mediaParts]
+            : userPrompt;
+
         const responseContent = await this.generateTextWithMessages({
           messages: [
             { role: 'system', content: STRUCTURED_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
+            { role: 'user', content: userContent },
           ],
           temperature: 0.5,
           timeoutSeconds,

@@ -14,12 +14,18 @@ const toRecord = (value: unknown): Record<string, unknown> | undefined => {
   return undefined;
 };
 
-const readString = (record: Record<string, unknown> | undefined, key: string): string | undefined => {
+const readString = (
+  record: Record<string, unknown> | undefined,
+  key: string
+): string | undefined => {
   const value = record?.[key];
   return typeof value === 'string' && value.trim() ? value : undefined;
 };
 
-const readNumber = (record: Record<string, unknown> | undefined, key: string): number | undefined => {
+const readNumber = (
+  record: Record<string, unknown> | undefined,
+  key: string
+): number | undefined => {
   const value = record?.[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 };

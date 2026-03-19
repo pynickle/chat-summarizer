@@ -1,4 +1,6 @@
-import { S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import axios from 'axios';
 import { handleError } from '../core/utils';
 import type { S3Config } from './s3-uploader';
 
@@ -36,6 +38,19 @@ export function resolveObjectKey(config: S3Config, key: string): string {
   return withPathPrefix(config.pathPrefix, key);
 }
 
+export async function generateSignedUrl(
+  client: S3Client,
+  config: S3Config,
+  key: string,
+  expiresInSeconds: number = 3600
+): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: config.bucket,
+    Key: key,
+  });
+  return getSignedUrl(client, command, { expiresIn: Math.max(60, expiresInSeconds) });
+}
+
 export async function listFiles(
   client: S3Client,
   config: S3Config,
@@ -55,8 +70,9 @@ export async function listFiles(
       return { success: true, files: [] };
     }
 
-    const files = response.Contents.filter((obj) => obj.Key && obj.Size && obj.Size > 0)
-      .map((obj) => stripPathPrefix(config.pathPrefix, obj.Key!));
+    const files = response.Contents.filter((obj) => obj.Key && obj.Size && obj.Size > 0).map(
+      (obj) => stripPathPrefix(config.pathPrefix, obj.Key!)
+    );
 
     return { success: true, files };
   } catch (error: any) {
@@ -71,10 +87,23 @@ export async function downloadFile(
   localPath: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+    const fullKey = resolveObjectKey(config, s3Key);
+    const fs = await import('fs/promises');
+
+    if (!config.isPrivate) {
+      const publicUrl = generatePublicUrl(config, fullKey);
+      const response = await axios.get<ArrayBuffer>(publicUrl, {
+        timeout: 30000,
+        responseType: 'arraybuffer',
+      });
+      const buffer = Buffer.from(response.data);
+      await fs.writeFile(localPath, buffer);
+      return { success: true };
+    }
+
     const command = new GetObjectCommand({
       Bucket: config.bucket,
-      Key: resolveObjectKey(config, s3Key),
+      Key: fullKey,
     });
 
     const response = await client.send(command);
@@ -84,8 +113,8 @@ export async function downloadFile(
 
     const body = response.Body as any;
     if (body.read && body.pipe) {
-      const fs = await import('fs');
-      const stream = fs.createWriteStream(localPath);
+      const fsRaw = await import('fs');
+      const stream = fsRaw.createWriteStream(localPath);
       body.pipe(stream);
       return new Promise((resolve) => {
         stream.on('finish', () => resolve({ success: true }));
@@ -106,7 +135,6 @@ export async function downloadFile(
     }
 
     const buffer = Buffer.concat(chunks);
-    const fs = await import('fs/promises');
     await fs.writeFile(localPath, buffer);
     return { success: true };
   } catch (error: any) {
@@ -120,10 +148,20 @@ export async function downloadText(
   s3Key: string
 ): Promise<{ success: boolean; content?: string; error?: string }> {
   try {
-    const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+    const fullKey = resolveObjectKey(config, s3Key);
+
+    if (!config.isPrivate) {
+      const publicUrl = generatePublicUrl(config, fullKey);
+      const response = await axios.get<string>(publicUrl, {
+        timeout: 30000,
+        responseType: 'text',
+      });
+      return { success: true, content: response.data };
+    }
+
     const command = new GetObjectCommand({
       Bucket: config.bucket,
-      Key: resolveObjectKey(config, s3Key),
+      Key: fullKey,
     });
 
     const response = await client.send(command);

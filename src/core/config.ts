@@ -28,6 +28,9 @@ export const ConfigSchema: Schema<Config> = Schema.object({
   s3: Schema.object({
     enabled: Schema.boolean().description('是否启用 S3 兼容云存储功能').default(false),
     bucket: Schema.string().description('存储桶名称').default(''),
+    isPrivate: Schema.boolean()
+      .description('存储桶是否为私有桶（私有桶将使用鉴权下载并为 AI 生成预签名链接）')
+      .default(true),
     accessKeyId: Schema.string().description('Access Key ID').role('secret').default(''),
     secretAccessKey: Schema.string().description('Secret Access Key').role('secret').default(''),
     endpoint: Schema.string().description('API 端点地址（可选，用于 MinIO 等）'),
@@ -96,6 +99,13 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     ])
       .description('OpenAI 接口模式')
       .default('chat.completions'),
+    webSearchEnabled: Schema.boolean().description('是否启用 AI Web Search 能力').default(true),
+    useResponsesContentBlocks: Schema.boolean()
+      .description('responses 模式下是否将图片/语音链接转换为 content block（视频保持文本链接）')
+      .default(true),
+    formatChatContentAsText: Schema.boolean()
+      .description('是否将聊天 JSON 转换为文本后再发送给 AI（仅影响 AI 输入，不影响原始存储）')
+      .default(true),
     model: Schema.string().description('AI 模型名称（如：gpt-5.4）').default('gpt-5.4'),
     maxTokens: Schema.number()
       .description('最大 token 数（设置为 0 表示不限制）')

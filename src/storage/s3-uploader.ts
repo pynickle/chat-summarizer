@@ -21,6 +21,7 @@ import {
   downloadFile,
   downloadText,
   generatePublicUrl,
+  generateSignedUrl,
   listFiles,
   resolveObjectKey,
 } from './s3-object-ops';
@@ -28,6 +29,7 @@ import {
 export interface S3Config {
   region: string;
   bucket: string;
+  isPrivate: boolean;
   accessKeyId: string;
   secretAccessKey: string;
   endpoint?: string;
@@ -69,6 +71,22 @@ export class S3Uploader {
     }
 
     this.client = new S3Client(clientConfig);
+  }
+
+  private tryExtractObjectKeyFromUrl(storedUrl: string): string | null {
+    try {
+      const parsed = new URL(storedUrl);
+      let path = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+      if (!path) return null;
+
+      if (path.startsWith(`${this.config.bucket}/`)) {
+        path = path.substring(this.config.bucket.length + 1);
+      }
+
+      return path;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -121,7 +139,7 @@ export class S3Uploader {
           clearTimeout(timeoutId);
         }
 
-      const url = generatePublicUrl(this.config, fullKey);
+        const url = generatePublicUrl(this.config, fullKey);
 
         return {
           success: true,
@@ -283,11 +301,7 @@ export class S3Uploader {
       }
 
       // 确定内容类型
-      const contentType = getFileContentType(
-        fileUrl,
-        fileName,
-        response.headers?.['content-type']
-      );
+      const contentType = getFileContentType(fileUrl, fileName, response.headers?.['content-type']);
 
       return await this.uploadBuffer(buffer, key, contentType);
     } catch (error: any) {
@@ -378,7 +392,6 @@ export class S3Uploader {
 
     return results;
   }
-
 
   /**
    * 生成用于存储的 S3 键名
@@ -477,5 +490,34 @@ export class S3Uploader {
     s3Key: string
   ): Promise<{ success: boolean; content?: string; error?: string }> {
     return downloadText(this.client, this.config, s3Key);
+  }
+
+  public async getSignedUrl(s3Key: string, expiresInSeconds: number = 3600): Promise<string> {
+    const key = resolveObjectKey(this.config, s3Key);
+    return generateSignedUrl(this.client, this.config, key, expiresInSeconds);
+  }
+
+  public async getAccessibleUrl(s3Key: string, expiresInSeconds: number = 3600): Promise<string> {
+    const key = resolveObjectKey(this.config, s3Key);
+    if (this.config.isPrivate) {
+      return generateSignedUrl(this.client, this.config, key, expiresInSeconds);
+    }
+    return generatePublicUrl(this.config, key);
+  }
+
+  public async getAccessibleUrlByStoredUrl(
+    storedUrl: string,
+    expiresInSeconds: number = 3600
+  ): Promise<string> {
+    if (!this.config.isPrivate) {
+      return storedUrl;
+    }
+
+    const key = this.tryExtractObjectKeyFromUrl(storedUrl);
+    if (!key) {
+      return storedUrl;
+    }
+
+    return generateSignedUrl(this.client, this.config, key, expiresInSeconds);
   }
 }

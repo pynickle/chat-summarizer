@@ -103,6 +103,19 @@ export class ExportManager {
     return { startDate, endDate, dateStrings };
   }
 
+  public async downloadTextByS3Key(s3Key: string): Promise<string | null> {
+    if (!this.s3Uploader) {
+      return null;
+    }
+
+    const result = await this.s3Uploader.downloadText(s3Key);
+    if (!result.success || !result.content) {
+      return null;
+    }
+
+    return result.content;
+  }
+
   /**
    * 解析日期字符串
    */
@@ -454,6 +467,7 @@ export class ExportManager {
           return {
             success: true,
             s3Url: finalUrl,
+            s3Key: uploadKey,
             message:
               `✅ 导出成功！\n\n` +
               `📊 消息数量：${messages.length} 条\n` +

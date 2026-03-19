@@ -40,7 +40,9 @@ export async function handleSummaryCheckCommand(
     }
 
     if (missingSummaries.length === 0) {
-      await sendMessage(session, [h.text(`✅ 最近${checkDays}天内所有已上传的聊天记录都已生成 AI 总结`)]);
+      await sendMessage(session, [
+        h.text(`✅ 最近${checkDays}天内所有已上传的聊天记录都已生成 AI 总结`),
+      ]);
       return;
     }
 
@@ -95,7 +97,9 @@ export async function handleSummaryRetryCommand(
     }
 
     if (!date || !date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      await sendMessage(session, [h.text('❌ 无效的日期格式，请使用 YYYY-MM-DD 格式（如：2024-01-01）')]);
+      await sendMessage(session, [
+        h.text('❌ 无效的日期格式，请使用 YYYY-MM-DD 格式（如：2024-01-01）'),
+      ]);
       return;
     }
 
@@ -257,11 +261,16 @@ export async function handleSummaryGetCommand(
 
     try {
       const groupInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
-      await sendMessage(session, [h.text(`📊 ${groupInfo} - ${parsedDate} AI 总结：`), h.image(summaryImageUrl)]);
+      await sendMessage(session, [
+        h.text(`📊 ${groupInfo} - ${parsedDate} AI 总结：`),
+        h.image(summaryImageUrl),
+      ]);
     } catch (error: any) {
       console.error('发送总结图片失败：', error);
       await sendMessage(session, [
-        h.text(`❌ 发送图片失败：${error?.message || '未知错误'}\n\n🔗 图片链接：${summaryImageUrl}`),
+        h.text(
+          `❌ 发送图片失败：${error?.message || '未知错误'}\n\n🔗 图片链接：${summaryImageUrl}`
+        ),
       ]);
     }
   } catch (error: any) {

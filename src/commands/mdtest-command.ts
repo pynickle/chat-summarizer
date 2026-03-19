@@ -6,7 +6,9 @@ export async function handleMdTestCommand(deps: CommandDeps, session: Session): 
   const { mdToImageService, sendMessage } = deps;
 
   try {
-    const tempMessage = await sendMessage(session, [h.text('🔄 正在生成 Markdown 测试图片，请稍候...')]);
+    const tempMessage = await sendMessage(session, [
+      h.text('🔄 正在生成 Markdown 测试图片，请稍候...'),
+    ]);
     const testMarkdown = generateTestMarkdown();
     const imageBuffer = await mdToImageService.convertToImage(testMarkdown);
 
@@ -14,7 +16,10 @@ export async function handleMdTestCommand(deps: CommandDeps, session: Session): 
       await session.bot.deleteMessage(session.channelId, tempMessage[0]);
     }
 
-    await sendMessage(session, [h.text('🎨 Markdown 和 Emoji 渲染测试结果：'), h.image(imageBuffer, 'image/png')]);
+    await sendMessage(session, [
+      h.text('🎨 Markdown 和 Emoji 渲染测试结果：'),
+      h.image(imageBuffer, 'image/png'),
+    ]);
   } catch (error: any) {
     console.error('Markdown 测试失败：', error);
     await sendMessage(session, [h.text(`❌ Markdown 测试失败：${error?.message || '未知错误'}`)]);

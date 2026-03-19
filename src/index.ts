@@ -122,7 +122,9 @@ export function apply(ctx: Context, config: Config) {
           const defaultSummaryTime = config.ai.defaultSummaryTime || '03:00';
           const defaultPushTime = config.ai.defaultPushTime || defaultSummaryTime;
           const summaryEnabled =
-            groupConfig.summaryEnabled !== undefined ? groupConfig.summaryEnabled : config.ai.enabled;
+            groupConfig.summaryEnabled !== undefined
+              ? groupConfig.summaryEnabled
+              : config.ai.enabled;
           const summaryTime = groupConfig.summaryTime || defaultSummaryTime;
           const pushEnabled = groupConfig.pushEnabled !== false;
           const pushTime = groupConfig.pushTime || groupConfig.summaryTime || defaultPushTime;

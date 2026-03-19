@@ -58,7 +58,10 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
     }
   };
 
-  const checkIfDateGroupAlreadyUploaded = async (date: Date, groupKey: string): Promise<boolean> => {
+  const checkIfDateGroupAlreadyUploaded = async (
+    date: Date,
+    groupKey: string
+  ): Promise<boolean> => {
     try {
       const dateStr = getDateStringInUTC8(date.getTime());
       const guildIdCondition = groupKey === 'private' ? undefined : groupKey;
@@ -119,7 +122,9 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
         });
 
         if (config.debug) {
-          logger.info(`已更新聊天记录文件上传记录 (群组：${groupKey}, 日期：${dateStr}, 状态：${status})`);
+          logger.info(
+            `已更新聊天记录文件上传记录 (群组：${groupKey}, 日期：${dateStr}, 状态：${status})`
+          );
         }
       } else {
         await dbOps.createChatLogFileRecord({
@@ -136,7 +141,9 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
         });
 
         if (config.debug) {
-          logger.info(`已创建聊天记录文件上传记录 (群组：${groupKey}, 日期：${dateStr}, 状态：${status})`);
+          logger.info(
+            `已创建聊天记录文件上传记录 (群组：${groupKey}, 日期：${dateStr}, 状态：${status})`
+          );
         }
       }
     } catch (error: any) {
@@ -237,7 +244,11 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
           });
 
           const result = await Promise.race([uploadPromise, timeoutPromise]);
-          const resultWithMeta = { ...result, groupKey: fileToUpload.groupKey, filePath: fileToUpload.filePath };
+          const resultWithMeta = {
+            ...result,
+            groupKey: fileToUpload.groupKey,
+            filePath: fileToUpload.filePath,
+          };
 
           if (result.success) {
             if (config.debug) {
@@ -246,7 +257,9 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
 
             const fileStats = await fs.stat(fileToUpload.filePath);
             const fileContent = await fs.readFile(fileToUpload.filePath, 'utf-8');
-            const recordCount = fileContent.split('\n').filter((line) => line.trim().length > 0).length;
+            const recordCount = fileContent
+              .split('\n')
+              .filter((line) => line.trim().length > 0).length;
 
             await createOrUpdateChatLogFileRecord(
               yesterday,
@@ -407,9 +420,12 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
       clearInterval(cleanupScheduler);
     }
 
-    cleanupScheduler = setInterval(async () => {
-      await executeDatabaseCleanup();
-    }, 60 * 60 * 1000);
+    cleanupScheduler = setInterval(
+      async () => {
+        await executeDatabaseCleanup();
+      },
+      60 * 60 * 1000
+    );
 
     if (config.debug) {
       logger.info('数据库清理任务已启动，每小时执行一次');

@@ -178,7 +178,6 @@ export class CardRenderer {
     return convertEmojiToImages(html);
   }
 
-
   /**
    * 渲染总结卡片
    */
@@ -479,5 +478,4 @@ export class CardRenderer {
       </div>
     `;
   }
-
 }

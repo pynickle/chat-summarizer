@@ -27,7 +27,9 @@ export async function handleAnalysisCommand(
 
     if (!aiService.isEnabled(targetGuildId || 'private')) {
       const guildInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
-      await sendMessage(session, [h.text(`❌ AI 功能未启用，或${guildInfo}已禁用 AI 功能，请检查 AI 配置`)]);
+      await sendMessage(session, [
+        h.text(`❌ AI 功能未启用，或${guildInfo}已禁用 AI 功能，请检查 AI 配置`),
+      ]);
       return;
     }
 
@@ -71,7 +73,9 @@ export async function handleAnalysisCommand(
           await session.bot.deleteMessage(session.channelId, fetchMessage[0]);
         }
         const guildInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
-        await sendMessage(session, [h.text(`❌ 未找到 ${guildInfo} 在 ${dateRangeStr} 的聊天记录`)]);
+        await sendMessage(session, [
+          h.text(`❌ 未找到 ${guildInfo} 在 ${dateRangeStr} 的聊天记录`),
+        ]);
         return;
       }
 

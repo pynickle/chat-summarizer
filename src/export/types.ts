@@ -8,6 +8,7 @@ export interface ExportRequest {
 export interface ExportResult {
   success: boolean;
   s3Url?: string;
+  s3Key?: string;
   error?: string;
   message?: string;
 }

@@ -7,7 +7,7 @@ import { StatisticsService } from '../data/statistics';
 import { CardRenderer } from '../rendering/card-renderer';
 import { RuntimeDeps, SummaryRuntime } from './plugin-types';
 import { getNextExecutionTime } from './upload-runtime';
-import { filterMessagesForSummary, getEffectiveGroupConfig } from './summary-common';
+import { getEffectiveGroupConfig } from './summary-common';
 import { createSummaryPushService } from './summary-push';
 
 export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
@@ -41,7 +41,7 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
       let response = '';
       let sdkDownloadError: string | undefined;
 
-      if (record.s3Key) {
+      if (record.s3Key && config.s3.isPrivate) {
         const sdkResult = await s3Uploader.downloadText(record.s3Key);
         if (sdkResult.success && sdkResult.content) {
           response = sdkResult.content;
@@ -64,6 +64,9 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
             responseType: 'text',
           });
           response = downloadResponse.data;
+          if (!config.s3.isPrivate) {
+            logger.info(`聊天记录下载成功（公开 URL 直链）: ${record.s3Url}`);
+          }
         } catch (downloadError) {
           const errorContext = await extractHttpErrorContext(downloadError);
           logger.error('下载聊天记录文件失败', {
@@ -87,7 +90,9 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
           const requestUrl = errorContext.requestUrl
             ? `，请求地址：${sanitizeUrlForLog(errorContext.requestUrl)}`
             : '';
-          const detail = errorContext.responseBody ? `，响应详情：${errorContext.responseBody}` : '';
+          const detail = errorContext.responseBody
+            ? `，响应详情：${errorContext.responseBody}`
+            : '';
           const sdkDetail = sdkDownloadError ? `，S3 SDK 错误：${sdkDownloadError}` : '';
 
           throw new Error(
@@ -110,9 +115,8 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
         `统计完成：${statistics.basicStats.totalMessages} 条消息，${statistics.basicStats.uniqueUsers} 位用户`
       );
 
-      const filteredContent = filterMessagesForSummary(response, logger);
       const aiContent = await aiService.generateStructuredSummary(
-        filteredContent,
+        response,
         record.date,
         statistics.basicStats.totalMessages,
         record.guildId || 'private',
@@ -286,7 +290,10 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
     schedulers.clear();
   };
 
-  const getScheduleTimePoints = (): Map<string, { summaryGroups: string[]; pushGroups: string[] }> => {
+  const getScheduleTimePoints = (): Map<
+    string,
+    { summaryGroups: string[]; pushGroups: string[] }
+  > => {
     const timePoints = new Map<string, { summaryGroups: string[]; pushGroups: string[] }>();
 
     for (const groupConfig of config.monitor.groups) {
@@ -321,7 +328,8 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
     const delay = nextExecution.getTime() - Date.now();
 
     if (config.debug) {
-      const summaryInfo = tasks.summaryGroups.length > 0 ? `总结: ${tasks.summaryGroups.join(', ')}` : '';
+      const summaryInfo =
+        tasks.summaryGroups.length > 0 ? `总结: ${tasks.summaryGroups.join(', ')}` : '';
       const pushInfo = tasks.pushGroups.length > 0 ? `推送: ${tasks.pushGroups.join(', ')}` : '';
       const taskInfo = [summaryInfo, pushInfo].filter(Boolean).join(' | ');
       logger.info(`调度 ${time}: ${taskInfo} (下次执行：${nextExecution.toLocaleString('zh-CN')})`);

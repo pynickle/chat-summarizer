@@ -39,7 +39,11 @@ export function getDefaultUserPromptTemplate(): string {
 请根据上述聊天记录，生成一份有趣的群日报～`;
 }
 
-export function getDefaultFilePrompt(timeRange: string, messageCount: number, groupInfo: string): string {
+export function getDefaultFilePrompt(
+  timeRange: string,
+  messageCount: number,
+  groupInfo: string
+): string {
   return `请分析以下群聊天记录：
 
 📊 **基本信息：**

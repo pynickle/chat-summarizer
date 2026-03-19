@@ -4,56 +4,53 @@
 
 ## OVERVIEW
 
-Runtime source for the Koishi plugin: message ingestion, persistence, upload, export, and AI summarization.
+Primary runtime tree. Entrypoint in `src/index.ts`; domain logic split by `commands/runtime/rendering/core/ai/storage/data/export`.
 
 ## STRUCTURE
 
 ```text
 src/
-├── index.ts           # Plugin entry and runtime orchestration (`apply`)
-├── commands.ts        # `cs.*` command registration and handlers
-├── database.ts        # Schema extension + DB operation facade
-├── services.ts        # Logger/S3/processor wrappers
-├── s3-uploader.ts     # S3 upload/key generation implementation
-├── export.ts          # Chat log export manager
-├── ai-service.ts      # AI request/response handling
-├── card-renderer.ts   # Daily report card HTML/image rendering
-├── md-to-image.ts     # Markdown-to-image rendering utility
-├── message-processor.ts # Message element parsing/extraction
-├── statistics.ts      # Interaction and activity analytics
-├── file-writer.ts     # Safe queued file writes/updates
-├── config.ts          # Koishi schema + constants + prompts
-├── types.ts           # Shared contracts/interfaces
-└── utils.ts           # Shared utility helpers
+├── index.ts               # plugin bootstrap + lifecycle hooks
+├── commands.ts            # compatibility facade for command registration
+├── commands/              # command handlers and command contracts
+├── runtime/               # monitor/upload/summary runtimes and shared runtime services
+├── rendering/             # summary card and markdown-image rendering
+├── core/                  # shared config/types/date/error utilities
+├── ai/                    # prompt builders, parser, AI service
+├── storage/               # S3 uploader + object/key/file helpers
+├── data/                  # schema extension, message parsing, stats, file writer
+└── export/                # export manager + export types
 ```
 
 ## WHERE TO LOOK
 
-| Need                                 | File                                         | Why                                                  |
-| ------------------------------------ | -------------------------------------------- | ---------------------------------------------------- |
-| Plugin lifecycle / hooks             | `src/index.ts`                               | Event listeners, scheduler setup, integration wiring |
-| Admin command changes                | `src/commands.ts`                            | All `ctx.command(...)` definitions are centralized   |
-| New DB fields or record lifecycle    | `src/database.ts`                            | Model extension and persistence methods              |
-| Upload behavior/timeouts/key formats | `src/s3-uploader.ts`, `src/index.ts`         | Low-level upload and call sites                      |
-| AI prompt/output behavior            | `src/ai-service.ts`, `src/config.ts`         | Prompt templates and parsing contracts               |
-| Report rendering styles/layout       | `src/card-renderer.ts`, `src/md-to-image.ts` | HTML/CSS rendering paths                             |
-| Shared helpers/types                 | `src/utils.ts`, `src/types.ts`               | Common functions and contracts                       |
+| Change Type                          | Location                                                                                        | Why                                               |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Hook wiring / startup order          | `src/index.ts`                                                                                  | single orchestration root for apply/ready/dispose |
+| New or changed command               | `src/commands/register.ts`, `src/commands/*.ts`                                                 | command graph is split by capability              |
+| Summary/upload timer behavior        | `src/runtime/summary-runtime.ts`, `src/runtime/upload-runtime.ts`                               | scheduler ownership lives here                    |
+| Message capture and persistence flow | `src/runtime/message-monitor.ts`, `src/runtime/chat-record-pipeline.ts`, `src/data/database.ts` | ingest path crosses runtime + data                |
+| Prompting, parse, analysis output    | `src/ai/ai-prompts.ts`, `src/ai/structured-parser.ts`, `src/ai/analysis-service.ts`             | AI contract boundary                              |
+| S3 key/object/file behavior          | `src/storage/s3-key-utils.ts`, `src/storage/s3-object-ops.ts`, `src/storage/s3-uploader.ts`     | storage behavior is utility-driven                |
+| Card visuals and rendering faults    | `src/rendering/card-renderer.ts`, `src/rendering/md-to-image.ts`                                | renderer entry points                             |
 
-## CONVENTIONS (SRC-SPECIFIC)
+## LOCAL CHILD GUIDES
 
-- Keep timezone-sensitive logic aligned to UTC+8 helper functions from `src/utils.ts`.
-- Prefer reusing existing wrappers (`LoggerService`, `S3Service`, `MessageProcessorService`) over ad-hoc direct calls.
-- Maintain current Chinese-first operator/admin text style for command replies and logs.
-- For JSONL record shape changes, update contracts in `src/types.ts` first, then consumers.
+- `src/commands/AGENTS.md` for command registration and handler conventions.
+- `src/runtime/AGENTS.md` for scheduler, pipeline, and side-effect boundaries.
+- `src/rendering/AGENTS.md` for card/image rendering invariants.
+- `src/core/AGENTS.md` for shared contracts, date/time, and config rules.
 
-## ANTI-PATTERNS (SRC-SPECIFIC)
+## SRC CONVENTIONS
 
-- Do not duplicate date/time conversion logic; use `formatDateInUTC8`, `getDateStringInUTC8`, `getCurrentTimeInUTC8`.
-- Do not scatter command registrations across files; keep command entrypoints in `src/commands.ts`.
-- Do not write raw file IO for chat log writes when `SafeFileWriter` already handles concurrency safety.
-- Do not bypass shared config/constants for hardcoded prompt text, URL replacement, or file encoding settings.
+- Keep cross-domain interfaces in `src/core/types.ts` or domain `types.ts` files; avoid circular imports through `index.ts`.
+- Treat `src/commands.ts` as transition surface; canonical command composition is `src/commands/register.ts` + handler files.
+- Keep UTC+8 assumptions centralized via `src/core/utils.ts` helpers.
+- Reuse `runtime/services.ts` wrappers before adding direct SDK/API calls in feature modules.
 
-## COMPLEXITY HOTSPOTS
+## SRC ANTI-PATTERNS
 
-- `src/index.ts`, `src/commands.ts`, `src/card-renderer.ts`, `src/ai-service.ts`, `src/s3-uploader.ts`, `src/export.ts` are large files (>500 LOC).
-- Prefer small, scoped edits in these files and validate adjacent behavior after changes.
+- Do not add ad-hoc command registration outside `src/commands/register.ts`.
+- Do not duplicate scheduler logic in handlers; timers belong in `src/runtime/*runtime.ts`.
+- Do not copy prompt/date parsing helpers across domains; import from `src/ai/*` or `src/core/utils.ts`.
+- Do not write chat log files without `src/data/file-writer.ts` queue discipline.

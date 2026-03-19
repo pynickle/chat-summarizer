@@ -116,9 +116,11 @@ export function createMessageRuntime(deps: MessageRuntimeDeps): MessageRuntime {
         originalElements: safeJsonStringify(session.elements),
         timestamp,
         messageType: processed.messageType,
-        imageUrls: processed.imageUrls.length > 0 ? safeJsonStringify(processed.imageUrls) : undefined,
+        imageUrls:
+          processed.imageUrls.length > 0 ? safeJsonStringify(processed.imageUrls) : undefined,
         fileUrls: processed.fileUrls.length > 0 ? safeJsonStringify(processed.fileUrls) : undefined,
-        videoUrls: processed.videoUrls.length > 0 ? safeJsonStringify(processed.videoUrls) : undefined,
+        videoUrls:
+          processed.videoUrls.length > 0 ? safeJsonStringify(processed.videoUrls) : undefined,
         isUploaded: false,
       };
 

@@ -1,13 +1,13 @@
 import * as path from 'path';
 import { S3Uploader } from '../storage/s3-uploader';
-import type {
-  ChatRecord,
-  Config,
-  FileRecord,
-  ImageRecord,
-  VideoRecord,
-} from '../core/types';
-import { formatDateInUTC8, getDateStringInUTC8, replaceImageUrl, safeJsonParse, safeJsonStringify } from '../core/utils';
+import type { ChatRecord, Config, FileRecord, ImageRecord, VideoRecord } from '../core/types';
+import {
+  formatDateInUTC8,
+  getDateStringInUTC8,
+  replaceImageUrl,
+  safeJsonParse,
+  safeJsonStringify,
+} from '../core/utils';
 
 type LoggerLike = {
   info: (message: string) => void;
@@ -300,11 +300,15 @@ export const createChatRecordPipeline = (deps: PipelineDeps) => {
 
       if (fileUrls.length > 0) {
         const fileUploadPromises = fileUrls.map((fileInfo) =>
-          withTimeout(uploadFileToS3(fileInfo.url, fileInfo.fileName, messageId, guildId), 180000, () => {
-            if (config.debug) {
-              logger.warn(`文件上传超时：${fileInfo.fileName}`);
+          withTimeout(
+            uploadFileToS3(fileInfo.url, fileInfo.fileName, messageId, guildId),
+            180000,
+            () => {
+              if (config.debug) {
+                logger.warn(`文件上传超时：${fileInfo.fileName}`);
+              }
             }
-          })
+          )
         );
 
         const fileUploadResults = await Promise.allSettled(fileUploadPromises);
@@ -318,11 +322,15 @@ export const createChatRecordPipeline = (deps: PipelineDeps) => {
 
       if (videoUrls.length > 0) {
         const videoUploadPromises = videoUrls.map((videoInfo) =>
-          withTimeout(uploadVideoToS3(videoInfo.url, videoInfo.fileName, messageId, guildId), 300000, () => {
-            if (config.debug) {
-              logger.warn(`视频上传超时：${videoInfo.fileName}`);
+          withTimeout(
+            uploadVideoToS3(videoInfo.url, videoInfo.fileName, messageId, guildId),
+            300000,
+            () => {
+              if (config.debug) {
+                logger.warn(`视频上传超时：${videoInfo.fileName}`);
+              }
             }
-          })
+          )
         );
 
         const videoUploadResults = await Promise.allSettled(videoUploadPromises);

@@ -39,6 +39,7 @@ export interface Config {
   s3: {
     enabled: boolean; // 是否启用 S3 兼容存储
     bucket: string; // 存储桶名称
+    isPrivate: boolean; // 存储桶是否私有（私有桶会优先走鉴权下载和预签名链接）
     accessKeyId: string; // Access Key ID
     secretAccessKey: string; // Secret Access Key
     endpoint?: string; // API 端点地址（可选）
@@ -73,6 +74,9 @@ export interface Config {
     apiUrl: string; // AI 接口 URL
     apiKey: string; // AI 接口密钥
     apiMode?: 'chat.completions' | 'responses';
+    webSearchEnabled?: boolean; // AI 是否启用 web search 能力（可选）
+    useResponsesContentBlocks?: boolean; // responses 模式是否使用 content block（可选）
+    formatChatContentAsText?: boolean; // 是否将聊天 JSON 转换为文本再交给 AI（可选）
     model?: string; // AI 模型名称（可选）
     maxTokens?: number; // 最大 token 数（可选）
     timeout?: number; // 请求超时时间（秒，可选）

@@ -117,7 +117,13 @@ export async function analyzeChat(
 
   try {
     const groupInfo = deps.getGroupInfo(guildId);
-    const prompts = buildAnalyzeChatPrompts(analysisPrompt, timeRange, messageCount, groupInfo, content);
+    const prompts = buildAnalyzeChatPrompts(
+      analysisPrompt,
+      timeRange,
+      messageCount,
+      groupInfo,
+      content
+    );
 
     deps.logger.debug('发送分析请求', {
       url: deps.getApiUrl(),

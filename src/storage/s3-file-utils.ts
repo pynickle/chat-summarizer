@@ -77,7 +77,11 @@ export function getImageContentType(url: string, headerContentType?: string): st
   return 'image/jpeg';
 }
 
-export function getFileContentType(url: string, fileName?: string, headerContentType?: string): string {
+export function getFileContentType(
+  url: string,
+  fileName?: string,
+  headerContentType?: string
+): string {
   if (headerContentType && headerContentType !== 'application/octet-stream') {
     return headerContentType;
   }
@@ -97,7 +101,11 @@ export function getFileContentType(url: string, fileName?: string, headerContent
   return 'application/octet-stream';
 }
 
-export function getVideoContentType(url: string, fileName?: string, headerContentType?: string): string {
+export function getVideoContentType(
+  url: string,
+  fileName?: string,
+  headerContentType?: string
+): string {
   if (headerContentType && headerContentType.startsWith('video/')) {
     return headerContentType;
   }

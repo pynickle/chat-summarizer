@@ -1,3 +1,9 @@
+## [1.22.6](https://github.com/pynickle/chat-summarizer/compare/v1.22.5...v1.22.6) (2026-03-19)
+
+### 🐛 Bug Fixes
+
+* fix presigned url error ([f4f8966](https://github.com/pynickle/chat-summarizer/commit/f4f89665129253aea721ddde45350dbb9d767f20))
+
 ## [1.22.5](https://github.com/pynickle/chat-summarizer/compare/v1.22.4...v1.22.5) (2026-03-19)
 
 ## [1.22.4](https://github.com/pynickle/chat-summarizer/compare/v1.22.3...v1.22.4) (2026-03-19)

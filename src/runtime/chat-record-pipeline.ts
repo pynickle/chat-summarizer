@@ -45,14 +45,30 @@ const withTimeout = async <T>(
   timeoutMs: number,
   onTimeout: () => void
 ): Promise<T | null> => {
+  let isCompleted = false;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
   const timeoutPromise = new Promise<null>((resolve) => {
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
+      if (isCompleted) {
+        return;
+      }
+
+      isCompleted = true;
       onTimeout();
       resolve(null);
     }, timeoutMs);
   });
 
-  return Promise.race([task, timeoutPromise]);
+  try {
+    const result = await Promise.race([task, timeoutPromise]);
+    isCompleted = true;
+    return result;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
 };
 
 export const createChatRecordPipeline = (deps: PipelineDeps) => {

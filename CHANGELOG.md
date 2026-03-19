@@ -1,3 +1,13 @@
+## [1.22.0](https://github.com/pynickle/chat-summarizer/compare/v1.21.0...v1.22.0) (2026-03-19)
+
+### ✨ Features
+
+* add private s3 support/content block/text instead of json for ai ([a0bd982](https://github.com/pynickle/chat-summarizer/commit/a0bd982de92ac762a88870ff3d0e14cdb6c344b9))
+
+### ♻️ Code Refactoring
+
+* refactor code ([2d95b87](https://github.com/pynickle/chat-summarizer/commit/2d95b87a144c6ac01e53b4d7b058729f524095f9))
+
 ## [1.21.0](https://github.com/pynickle/chat-summarizer/compare/v1.20.3...v1.21.0) (2026-03-18)
 
 ### ✨ Features

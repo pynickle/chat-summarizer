@@ -47,6 +47,15 @@ export interface UploadResult {
 export class S3Uploader {
   private client: S3Client;
   private config: S3Config;
+  private static readonly MANAGED_KEY_ROOTS = [
+    'images/',
+    'files/',
+    'videos/',
+    'chat-logs/',
+    'summary-images/',
+    'exports/',
+    'test/',
+  ];
 
   constructor(config: S3Config) {
     this.config = config;
@@ -76,49 +85,6 @@ export class S3Uploader {
   private tryExtractObjectKeyFromUrl(storedUrl: string): string | null {
     try {
       const parsed = new URL(storedUrl);
-      const pathWithoutLeadingSlash = parsed.pathname.replace(/^\/+/, '');
-
-      let endpointHost = '';
-      let endpointBasePath = '';
-      if (this.config.endpoint) {
-        const endpoint = new URL(this.config.endpoint);
-        endpointHost = endpoint.host;
-        endpointBasePath = endpoint.pathname.replace(/\/+$/, '').replace(/^\/+/, '');
-      }
-
-      const sameEndpointHost = !!endpointHost && parsed.host === endpointHost;
-      const matchesEndpointBasePath =
-        !endpointBasePath ||
-        pathWithoutLeadingSlash === endpointBasePath ||
-        pathWithoutLeadingSlash.startsWith(`${endpointBasePath}/`);
-      const isBucketPathStyle = pathWithoutLeadingSlash.startsWith(`${this.config.bucket}/`);
-      const isBucketVirtualHost = parsed.hostname.startsWith(`${this.config.bucket}.`);
-      const canDeriveKeyFromThisUrl =
-        (sameEndpointHost && matchesEndpointBasePath) || isBucketPathStyle || isBucketVirtualHost;
-
-      if (!canDeriveKeyFromThisUrl) {
-        return null;
-      }
-
-      const keyFromQuery =
-        parsed.searchParams.get('key') ||
-        parsed.searchParams.get('objectKey') ||
-        parsed.searchParams.get('s3Key');
-      if (typeof keyFromQuery === 'string' && keyFromQuery.trim()) {
-        return decodeURIComponent(keyFromQuery).replace(/^\/+/, '');
-      }
-
-      const looksLikePresignedUrl =
-        parsed.searchParams.has('X-Amz-Signature') ||
-        parsed.searchParams.has('X-Amz-Algorithm') ||
-        parsed.searchParams.has('x-amz-signature') ||
-        parsed.searchParams.has('x-amz-algorithm') ||
-        parsed.searchParams.has('x-id');
-
-      if (looksLikePresignedUrl && /\/download$/i.test(parsed.pathname)) {
-        return null;
-      }
-
       let path = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
       if (!path) return null;
 
@@ -126,7 +92,18 @@ export class S3Uploader {
         path = path.substring(this.config.bucket.length + 1);
       }
 
-      if (!path || (looksLikePresignedUrl && /^download$/i.test(path))) {
+      const cleanPrefix = this.config.pathPrefix.replace(/^\/+|\/+$/g, '');
+      let relativeKey = path;
+      if (cleanPrefix) {
+        while (relativeKey.startsWith(cleanPrefix + '/')) {
+          relativeKey = relativeKey.substring(cleanPrefix.length + 1);
+        }
+      }
+
+      const isManagedObject = S3Uploader.MANAGED_KEY_ROOTS.some((root) =>
+        relativeKey.startsWith(root)
+      );
+      if (!isManagedObject) {
         return null;
       }
 
@@ -565,6 +542,8 @@ export class S3Uploader {
       return storedUrl;
     }
 
-    return generateSignedUrl(this.client, this.config, key, expiresInSeconds);
+    const resolvedKey = resolveObjectKey(this.config, key);
+
+    return generateSignedUrl(this.client, this.config, resolvedKey, expiresInSeconds);
   }
 }

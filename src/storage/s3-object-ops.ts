@@ -5,28 +5,17 @@ import { handleError } from '../core/utils';
 import type { S3Config } from './s3-uploader';
 
 function withPathPrefix(pathPrefix: string, value: string): string {
-  const normalizedValue = value.replace(/^\/+/, '');
   if (!pathPrefix || pathPrefix.trim() === '') {
-    return normalizedValue;
+    return value;
   }
   const cleanPrefix = pathPrefix.replace(/^\/+|\/+$/g, '');
   if (!cleanPrefix) {
-    return normalizedValue;
+    return value;
   }
-
-  let dedupedValue = normalizedValue;
-  const repeatedPrefix = `${cleanPrefix}/${cleanPrefix}/`;
-  while (dedupedValue.startsWith(repeatedPrefix)) {
-    dedupedValue = dedupedValue.substring(cleanPrefix.length + 1);
+  if (value.startsWith(cleanPrefix + '/')) {
+    return value;
   }
-  if (dedupedValue === `${cleanPrefix}/${cleanPrefix}`) {
-    dedupedValue = cleanPrefix;
-  }
-
-  if (dedupedValue === cleanPrefix || dedupedValue.startsWith(cleanPrefix + '/')) {
-    return dedupedValue;
-  }
-  return `${cleanPrefix}/${dedupedValue}`;
+  return `${cleanPrefix}/${value}`;
 }
 
 function stripPathPrefix(pathPrefix: string, key: string): string {

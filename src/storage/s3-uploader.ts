@@ -47,15 +47,6 @@ export interface UploadResult {
 export class S3Uploader {
   private client: S3Client;
   private config: S3Config;
-  private static readonly MANAGED_KEY_ROOTS = [
-    'images/',
-    'files/',
-    'videos/',
-    'chat-logs/',
-    'summary-images/',
-    'exports/',
-    'test/',
-  ];
 
   constructor(config: S3Config) {
     this.config = config;
@@ -90,21 +81,6 @@ export class S3Uploader {
 
       if (path.startsWith(`${this.config.bucket}/`)) {
         path = path.substring(this.config.bucket.length + 1);
-      }
-
-      const cleanPrefix = this.config.pathPrefix.replace(/^\/+|\/+$/g, '');
-      let relativeKey = path;
-      if (cleanPrefix) {
-        while (relativeKey.startsWith(cleanPrefix + '/')) {
-          relativeKey = relativeKey.substring(cleanPrefix.length + 1);
-        }
-      }
-
-      const isManagedObject = S3Uploader.MANAGED_KEY_ROOTS.some((root) =>
-        relativeKey.startsWith(root)
-      );
-      if (!isManagedObject) {
-        return null;
       }
 
       return path;

@@ -1,3 +1,9 @@
+## [1.22.9](https://github.com/pynickle/chat-summarizer/compare/v1.22.8...v1.22.9) (2026-03-20)
+
+### 🐛 Bug Fixes
+
+* fix s3 prefix ([e7530e7](https://github.com/pynickle/chat-summarizer/commit/e7530e7a75de989ec1feee46d034683edd116feb))
+
 ## [1.22.8](https://github.com/pynickle/chat-summarizer/compare/v1.22.7...v1.22.8) (2026-03-20)
 
 ## [1.22.7](https://github.com/pynickle/chat-summarizer/compare/v1.22.6...v1.22.7) (2026-03-19)

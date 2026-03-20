@@ -76,11 +76,58 @@ export class S3Uploader {
   private tryExtractObjectKeyFromUrl(storedUrl: string): string | null {
     try {
       const parsed = new URL(storedUrl);
+      const pathWithoutLeadingSlash = parsed.pathname.replace(/^\/+/, '');
+
+      let endpointHost = '';
+      let endpointBasePath = '';
+      if (this.config.endpoint) {
+        const endpoint = new URL(this.config.endpoint);
+        endpointHost = endpoint.host;
+        endpointBasePath = endpoint.pathname.replace(/\/+$/, '').replace(/^\/+/, '');
+      }
+
+      const sameEndpointHost = !!endpointHost && parsed.host === endpointHost;
+      const matchesEndpointBasePath =
+        !endpointBasePath ||
+        pathWithoutLeadingSlash === endpointBasePath ||
+        pathWithoutLeadingSlash.startsWith(`${endpointBasePath}/`);
+      const isBucketPathStyle = pathWithoutLeadingSlash.startsWith(`${this.config.bucket}/`);
+      const isBucketVirtualHost = parsed.hostname.startsWith(`${this.config.bucket}.`);
+      const canDeriveKeyFromThisUrl =
+        (sameEndpointHost && matchesEndpointBasePath) || isBucketPathStyle || isBucketVirtualHost;
+
+      if (!canDeriveKeyFromThisUrl) {
+        return null;
+      }
+
+      const keyFromQuery =
+        parsed.searchParams.get('key') ||
+        parsed.searchParams.get('objectKey') ||
+        parsed.searchParams.get('s3Key');
+      if (typeof keyFromQuery === 'string' && keyFromQuery.trim()) {
+        return decodeURIComponent(keyFromQuery).replace(/^\/+/, '');
+      }
+
+      const looksLikePresignedUrl =
+        parsed.searchParams.has('X-Amz-Signature') ||
+        parsed.searchParams.has('X-Amz-Algorithm') ||
+        parsed.searchParams.has('x-amz-signature') ||
+        parsed.searchParams.has('x-amz-algorithm') ||
+        parsed.searchParams.has('x-id');
+
+      if (looksLikePresignedUrl && /\/download$/i.test(parsed.pathname)) {
+        return null;
+      }
+
       let path = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
       if (!path) return null;
 
       if (path.startsWith(`${this.config.bucket}/`)) {
         path = path.substring(this.config.bucket.length + 1);
+      }
+
+      if (!path || (looksLikePresignedUrl && /^download$/i.test(path))) {
+        return null;
       }
 
       return path;

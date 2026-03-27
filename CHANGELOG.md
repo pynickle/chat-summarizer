@@ -1,3 +1,13 @@
+## [1.22.10](https://github.com/pynickle/chat-summarizer/compare/v1.22.9...v1.22.10) (2026-03-27)
+
+### 🔧 Miscellaneous Changes
+
+* improve for patch ([34bfba8](https://github.com/pynickle/chat-summarizer/commit/34bfba8108843c0f935c27028c766a012c94d5ac))
+
+### 🚀 Improvements
+
+* improve qq url detection ([42970c7](https://github.com/pynickle/chat-summarizer/commit/42970c76892db84197b7ed09fe61b1b78ade45ab))
+
 ## [1.22.9](https://github.com/pynickle/chat-summarizer/compare/v1.22.8...v1.22.9) (2026-03-20)
 
 ### 🐛 Bug Fixes

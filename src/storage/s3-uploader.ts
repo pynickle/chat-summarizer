@@ -82,9 +82,38 @@ export class S3Uploader {
     this.client = new S3Client(clientConfig);
   }
 
+  private normalizePathname(pathname: string): string {
+    return pathname.replace(/^\/+|\/+$/g, '');
+  }
+
+  private isConfiguredStorageUrl(parsed: URL): boolean {
+    if (this.config.endpoint) {
+      try {
+        const endpointUrl = new URL(this.config.endpoint);
+        if (parsed.origin !== endpointUrl.origin) {
+          return false;
+        }
+
+        const endpointBasePath = this.normalizePathname(endpointUrl.pathname);
+        const parsedPath = this.normalizePathname(parsed.pathname);
+        const bucketPrefix = endpointBasePath
+          ? `${endpointBasePath}/${this.config.bucket}`
+          : this.config.bucket;
+
+        return parsedPath === bucketPrefix || parsedPath.startsWith(`${bucketPrefix}/`);
+      } catch {
+        return false;
+      }
+    }
+
+    return parsed.hostname === `${this.config.bucket}.s3.${this.config.region}.amazonaws.com`;
+  }
+
   private tryExtractObjectKeyFromUrl(storedUrl: string): string | null {
     try {
       const parsed = new URL(storedUrl);
+      if (!this.isConfiguredStorageUrl(parsed)) return null;
+
       let path = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
       if (!path) return null;
 
@@ -111,6 +140,10 @@ export class S3Uploader {
     } catch {
       return null;
     }
+  }
+
+  public isManagedStoredUrl(storedUrl: string): boolean {
+    return !!this.tryExtractObjectKeyFromUrl(storedUrl);
   }
 
   /**

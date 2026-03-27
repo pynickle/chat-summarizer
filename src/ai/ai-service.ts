@@ -40,7 +40,7 @@ type MediaBuildResult = {
   expiredImageUrls: string[];
 };
 
-const EXPIRED_QQ_IMAGE_MARKER = '[图片已失效:qq_download_url_expired]';
+const EXPIRED_IMAGE_MARKER = '[图片已失效:external_image_url_unavailable]';
 
 export class AIService {
   private logger: Logger;
@@ -245,24 +245,15 @@ export class AIService {
     }
   }
 
-  private isQQTemporaryImageUrl(url: string): boolean {
-    try {
-      const parsed = new URL(url);
-      const isNTQQDownload =
-        parsed.hostname === 'multimedia.nt.qq.com.cn' && parsed.pathname === '/download';
-      const isGchatQpic =
-        parsed.hostname === 'gchat.qpic.cn' && parsed.pathname.startsWith('/gchatpic_new/');
-      return isNTQQDownload || isGchatQpic;
-    } catch {
-      return false;
-    }
+  private isConfiguredS3Url(url: string): boolean {
+    return this.s3Uploader?.isManagedStoredUrl(url) ?? false;
   }
 
   private isLikelyImageContentType(contentType: string): boolean {
     return contentType.startsWith('image/') || contentType.includes('application/octet-stream');
   }
 
-  private isQQDownloadExpiredPayload(payload: string): boolean {
+  private isExpiredImagePayload(payload: string): boolean {
     try {
       const parsed = JSON.parse(payload) as {
         retcode?: unknown;
@@ -278,11 +269,7 @@ export class AIService {
     }
   }
 
-  private async isQQTemporaryImageExpired(url: string): Promise<boolean> {
-    if (!this.isQQTemporaryImageUrl(url)) {
-      return false;
-    }
-
+  private async isImageUrlExpired(url: string): Promise<boolean> {
     const abortController = new AbortController();
     const timer = setTimeout(() => abortController.abort(), 8000);
 
@@ -305,7 +292,7 @@ export class AIService {
 
       if (!response.ok && response.status >= 400 && response.status < 500) {
         const body = await response.text();
-        if (this.isQQDownloadExpiredPayload(body)) {
+        if (this.isExpiredImagePayload(body)) {
           return true;
         }
         return !isLikelyImage;
@@ -321,10 +308,10 @@ export class AIService {
       }
 
       const body = await response.text();
-      return this.isQQDownloadExpiredPayload(body);
+      return this.isExpiredImagePayload(body);
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        this.logger.warn('检测 QQ 临时图片链接是否过期超时，保留原链接');
+        this.logger.warn('检测图片链接是否失效超时，保留原链接');
       }
       return false;
     } finally {
@@ -341,8 +328,9 @@ export class AIService {
       const fileUrls = this.parseUrlArray(record.fileUrls);
 
       for (const imageUrl of imageUrls) {
+        const isManagedS3Url = this.isConfiguredS3Url(imageUrl);
         const accessibleUrl = await this.toAccessibleUrl(imageUrl);
-        const isExpired = await this.isQQTemporaryImageExpired(accessibleUrl);
+        const isExpired = isManagedS3Url ? false : await this.isImageUrlExpired(accessibleUrl);
         if (isExpired) {
           expiredImageUrls.push(imageUrl, accessibleUrl);
           continue;
@@ -391,15 +379,15 @@ export class AIService {
     let sanitizedText = textContent;
 
     for (const expiredUrl of uniqueUrls) {
-      sanitizedText = sanitizedText.split(expiredUrl).join(EXPIRED_QQ_IMAGE_MARKER);
+      sanitizedText = sanitizedText.split(expiredUrl).join(EXPIRED_IMAGE_MARKER);
     }
 
     const markerSummary =
-      `\n\n[图片处理标记] 检测到 ${uniqueUrls.length} 个 QQ 临时图片链接已失效，` +
-      `已从多模态输入中移除，统一标记为 ${EXPIRED_QQ_IMAGE_MARKER}`;
+      `\n\n[图片处理标记] 检测到 ${uniqueUrls.length} 个外部图片链接已失效，` +
+      `已从多模态输入中移除，统一标记为 ${EXPIRED_IMAGE_MARKER}`;
 
     this.logger.warn(
-      `检测到 ${uniqueUrls.length} 个 QQ 临时图片链接已失效，跳过传递给 AI（使用标记 ${EXPIRED_QQ_IMAGE_MARKER}）`
+      `检测到 ${uniqueUrls.length} 个外部图片链接已失效，跳过传递给 AI（使用标记 ${EXPIRED_IMAGE_MARKER}）`
     );
 
     return sanitizedText + markerSummary;

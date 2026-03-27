@@ -53,6 +53,10 @@
     {
       "type": "chore",
       "release": "patch"
+    },
+    {
+      "type": "imp",
+      "release": "patch"
     }
   ]
 }

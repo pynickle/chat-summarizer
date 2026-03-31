@@ -1,3 +1,13 @@
+## [1.23.0](https://github.com/pynickle/chat-summarizer/compare/v1.22.10...v1.23.0) (2026-03-31)
+
+### ✨ Features
+
+* add retry logic ([f58e5cf](https://github.com/pynickle/chat-summarizer/commit/f58e5cf14c6377cf03cf8a2d1583af26a7c3b7c3))
+
+### 🔧 Miscellaneous Changes
+
+* remove github publishing ([010ad7e](https://github.com/pynickle/chat-summarizer/commit/010ad7eccf137e307dda8434f3274bacf3e0b97a))
+
 ## [1.22.10](https://github.com/pynickle/chat-summarizer/compare/v1.22.9...v1.22.10) (2026-03-27)
 
 ### 🔧 Miscellaneous Changes

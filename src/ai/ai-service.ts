@@ -844,6 +844,10 @@ export class AIService {
       }
     }
 
+    if (this.config.strictSummarySuccess !== false) {
+      throw new Error(lastError?.message || '结构化 AI 总结生成失败');
+    }
+
     this.logger.error('结构化总结生成最终失败，使用默认结构', {
       error: lastError?.message,
     });

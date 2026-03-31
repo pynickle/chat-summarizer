@@ -106,6 +106,20 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     formatChatContentAsText: Schema.boolean()
       .description('是否将聊天 JSON 转换为文本后再发送给 AI（仅影响 AI 输入，不影响原始存储）')
       .default(true),
+    strictSummarySuccess: Schema.boolean()
+      .description('AI 总结失败时是否禁止使用默认兜底结构并视为成功')
+      .default(true),
+    summaryRetryEnabled: Schema.boolean().description('AI 总结失败后是否自动重试').default(true),
+    summaryRetryIntervalMinutes: Schema.number()
+      .description('AI 总结自动重试间隔（分钟）')
+      .min(1)
+      .max(1440)
+      .default(5),
+    summaryRetryMaxAttempts: Schema.number()
+      .description('AI 总结自动重试次数（不含首次尝试）')
+      .min(0)
+      .max(20)
+      .default(3),
     model: Schema.string().description('AI 模型名称（如：gpt-5.4）').default('gpt-5.4'),
     maxTokens: Schema.number()
       .description('最大 token 数（设置为 0 表示不限制）')

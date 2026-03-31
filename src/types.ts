@@ -73,6 +73,10 @@ export interface Config {
     apiUrl: string; // AI 接口 URL
     apiKey: string; // AI 接口密钥
     apiMode?: 'chat.completions' | 'responses';
+    strictSummarySuccess?: boolean;
+    summaryRetryEnabled?: boolean;
+    summaryRetryIntervalMinutes?: number;
+    summaryRetryMaxAttempts?: number;
     model?: string; // AI 模型名称（可选）
     maxTokens?: number; // 最大 token 数（可选）
     timeout?: number; // 请求超时时间（秒，可选）
@@ -89,6 +93,8 @@ export interface Config {
   // 调试配置
   debug: boolean; // 调试模式
 }
+
+export type SummaryStatus = 'pending' | 'retrying' | 'success' | 'failed';
 
 // 聊天记录数据结构
 export interface ChatRecord {
@@ -159,6 +165,11 @@ export interface ChatLogFileRecord {
   error?: string; // 错误信息（如果失败）
   summaryImageUrl?: string; // AI 总结缩略图 URL（可选）
   summaryGeneratedAt?: number; // AI 总结生成时间戳（可选）
+  summaryStatus?: SummaryStatus;
+  summaryRetryCount?: number;
+  summaryLastAttemptAt?: number;
+  summaryNextRetryAt?: number;
+  summaryLastError?: string;
 }
 
 // 插件统计信息

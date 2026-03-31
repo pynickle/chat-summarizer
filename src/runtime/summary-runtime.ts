@@ -13,11 +13,156 @@ import { createSummaryPushService } from './summary-push';
 export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
   const { ctx, config, logger, dbOps, s3Service } = deps;
   const schedulers: Map<string, NodeJS.Timeout> = new Map();
+  const retrySchedulers: Map<number, NodeJS.Timeout> = new Map();
   const { pushSummaryToGroup, pushSummaryToConfiguredGroups } = createSummaryPushService(
     ctx,
     config,
     logger
   );
+
+  const getSummaryRetryIntervalMs = (): number => {
+    const retryIntervalMinutes = Math.max(config.ai.summaryRetryIntervalMinutes || 5, 1);
+    return retryIntervalMinutes * 60 * 1000;
+  };
+
+  const getSummaryRetryMaxAttempts = (): number => {
+    return Math.max(config.ai.summaryRetryMaxAttempts ?? 3, 0);
+  };
+
+  const isSummaryRetryEnabled = (): boolean => {
+    return config.ai.summaryRetryEnabled !== false;
+  };
+
+  const clearRetryScheduler = (recordId: number): void => {
+    const timeout = retrySchedulers.get(recordId);
+    if (timeout) {
+      clearTimeout(timeout);
+      retrySchedulers.delete(recordId);
+    }
+  };
+
+  const markSummaryAttemptStarted = async (
+    recordId: number,
+    retryCount: number,
+    status: 'pending' | 'retrying' = 'pending'
+  ): Promise<void> => {
+    await dbOps.updateChatLogFileSummaryState(recordId, {
+      summaryStatus: status,
+      summaryRetryCount: retryCount,
+      summaryLastAttemptAt: Date.now(),
+      summaryNextRetryAt: 0,
+      summaryLastError: undefined,
+    });
+  };
+
+  const scheduleRetryTask = (record: ChatLogFileRecord): void => {
+    if (!record.id || !isSummaryRetryEnabled() || record.summaryImageUrl) {
+      return;
+    }
+
+    const nextRetryAt = record.summaryNextRetryAt;
+    if (typeof nextRetryAt !== 'number' || nextRetryAt <= 0) {
+      return;
+    }
+
+    clearRetryScheduler(record.id);
+    const delay = Math.max(nextRetryAt - Date.now(), 0);
+    const timeout = setTimeout(async () => {
+      retrySchedulers.delete(record.id!);
+
+      const latestRecord = await dbOps.getChatLogFileById(record.id!);
+      if (!latestRecord || latestRecord.summaryImageUrl || latestRecord.status !== 'uploaded') {
+        return;
+      }
+
+      const nextRetryCount = (latestRecord.summaryRetryCount ?? 0) + 1;
+      await markSummaryAttemptStarted(latestRecord.id!, nextRetryCount, 'retrying');
+
+      try {
+        await generateSummaryForRecord(
+          {
+            ...latestRecord,
+            summaryRetryCount: nextRetryCount,
+          },
+          true
+        );
+      } catch (error: unknown) {
+        logger.error(`记录 ${latestRecord.id} 的自动重试失败`, error);
+      }
+    }, delay);
+
+    retrySchedulers.set(record.id, timeout);
+  };
+
+  const restorePendingRetryTasks = async (): Promise<void> => {
+    if (!isSummaryRetryEnabled()) {
+      return;
+    }
+
+    try {
+      const pendingRecords = await dbOps.getAllSummaryRecordsPendingRetry();
+      for (const record of pendingRecords) {
+        scheduleRetryTask(record);
+      }
+
+      if (pendingRecords.length > 0) {
+        logger.info(`已恢复 ${pendingRecords.length} 个待执行的总结重试任务`);
+      }
+    } catch (error: unknown) {
+      logger.error('恢复待执行的总结重试任务失败', error);
+    }
+  };
+
+  const handleSummaryFailure = async (record: ChatLogFileRecord, error: unknown): Promise<void> => {
+    if (!record.id) {
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    const retryCount = record.summaryRetryCount ?? 0;
+    const maxRetryAttempts = getSummaryRetryMaxAttempts();
+
+    if (isSummaryRetryEnabled() && retryCount < maxRetryAttempts) {
+      const nextRetryAt = Date.now() + getSummaryRetryIntervalMs();
+      const nextRecord: ChatLogFileRecord = {
+        ...record,
+        summaryStatus: 'retrying',
+        summaryNextRetryAt: nextRetryAt,
+        summaryLastError: message,
+      };
+
+      await dbOps.updateChatLogFileSummaryState(record.id, {
+        summaryStatus: 'retrying',
+        summaryRetryCount: retryCount,
+        summaryLastAttemptAt: Date.now(),
+        summaryNextRetryAt: nextRetryAt,
+        summaryLastError: message,
+        summaryImageUrl: undefined,
+        summaryGeneratedAt: 0,
+      });
+
+      scheduleRetryTask(nextRecord);
+      logger.warn(
+        `记录 ${record.id} 的 AI 总结生成失败，将在 ${config.ai.summaryRetryIntervalMinutes || 5} 分钟后进行第 ${retryCount + 1} 次重试：${message}`
+      );
+      return;
+    }
+
+    clearRetryScheduler(record.id);
+    await dbOps.updateChatLogFileSummaryState(record.id, {
+      summaryStatus: 'failed',
+      summaryRetryCount: retryCount,
+      summaryLastAttemptAt: Date.now(),
+      summaryNextRetryAt: 0,
+      summaryLastError: message,
+      summaryImageUrl: undefined,
+      summaryGeneratedAt: 0,
+    });
+
+    logger.error(
+      `记录 ${record.id} 的 AI 总结生成失败，已达到最大重试次数 ${maxRetryAttempts}，停止自动重试：${message}`
+    );
+  };
 
   const generateSummaryForRecord = async (
     record: ChatLogFileRecord,
@@ -32,6 +177,11 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
     if (!s3Uploader) {
       logger.error('S3 上传器未初始化');
       return;
+    }
+
+    if (record.id) {
+      clearRetryScheduler(record.id);
+      await markSummaryAttemptStarted(record.id, record.summaryRetryCount ?? 0);
     }
 
     try {
@@ -148,7 +298,8 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
       }
 
       throw new Error(`图片上传失败：${uploadResult.error}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      await handleSummaryFailure(record, error);
       logger.error(`为记录 ${record.id} 生成 AI 总结失败`, error);
       throw error;
     }
@@ -298,6 +449,14 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
       }
     }
     schedulers.clear();
+
+    for (const [recordId, timeout] of retrySchedulers.entries()) {
+      clearTimeout(timeout);
+      if (config.debug) {
+        logger.info(`已清理记录 ${recordId} 的总结重试调度器`);
+      }
+    }
+    retrySchedulers.clear();
   };
 
   const getScheduleTimePoints = (): Map<
@@ -398,6 +557,8 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
     for (const [time, tasks] of timePoints.entries()) {
       scheduleTimePoint(time, tasks);
     }
+
+    void restorePendingRetryTasks();
 
     logger.info(`已设置 ${timePoints.size} 个时间点的定时任务`);
   };

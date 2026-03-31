@@ -6,6 +6,7 @@ import {
   handleSummaryCheckCommand,
   handleSummaryGetCommand,
   handleSummaryRetryCommand,
+  handleSummaryRetryPendingCommand,
 } from './summary-command';
 import { handleMdTestCommand } from './mdtest-command';
 import { handleAnalysisCommand } from './analysis-command';
@@ -75,6 +76,18 @@ export function registerCommands(deps: CommandDeps): void {
     .example('cs.summary.get yesterday - 获取昨天当前群的 AI 总结图片')
     .action(async ({ session }, date, guildId) => {
       await handleSummaryGetCommand(deps, session, date, guildId);
+    });
+
+  ctx
+    .command(
+      'cs.summary.retry.pending [date] [guildId]',
+      '重试未成功的 AI 总结并补发到对应群聊（仅管理员私聊可用）'
+    )
+    .example('cs.summary.retry.pending - 重试所有未成功的群聊总结并自动补发')
+    .example('cs.summary.retry.pending yesterday - 重试昨天未成功的群聊总结并自动补发')
+    .example('cs.summary.retry.pending 2024-01-01 123456789 - 重试指定群在指定日期未成功的总结')
+    .action(async ({ session }, date, guildId) => {
+      await handleSummaryRetryPendingCommand(deps, session, date, guildId);
     });
 
   ctx.command('cs.mdtest', '测试 Markdown 和 Emoji 渲染效果').action(async ({ session }) => {

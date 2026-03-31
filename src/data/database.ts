@@ -6,6 +6,7 @@ import {
   VideoRecord,
   ChatLogFileRecord,
   PluginStats,
+  SummaryStatus,
 } from '../core/types';
 
 // 扩展数据库模型
@@ -100,6 +101,11 @@ export function extendDatabase(ctx: Context) {
       error: 'text',
       summaryImageUrl: 'string',
       summaryGeneratedAt: 'unsigned',
+      summaryStatus: 'string',
+      summaryRetryCount: 'unsigned',
+      summaryLastAttemptAt: 'unsigned',
+      summaryNextRetryAt: 'unsigned',
+      summaryLastError: 'text',
     },
     {
       autoInc: true,
@@ -173,8 +179,27 @@ export class DatabaseOperations {
       {
         summaryImageUrl,
         summaryGeneratedAt: Date.now(),
+        summaryStatus: 'success',
+        summaryLastAttemptAt: Date.now(),
+        summaryNextRetryAt: 0,
+        summaryLastError: undefined,
       }
     );
+  }
+
+  async updateChatLogFileSummaryState(
+    id: number,
+    updates: {
+      summaryStatus?: SummaryStatus;
+      summaryRetryCount?: number;
+      summaryLastAttemptAt?: number;
+      summaryNextRetryAt?: number;
+      summaryLastError?: string;
+      summaryGeneratedAt?: number;
+      summaryImageUrl?: string;
+    }
+  ): Promise<void> {
+    await this.ctx.database.set('chat_log_files', { id }, updates);
   }
 
   // 获取需要生成 AI 总结的聊天记录文件
@@ -215,7 +240,70 @@ export class DatabaseOperations {
       {
         summaryImageUrl: undefined,
         summaryGeneratedAt: 0,
+        summaryStatus: 'pending',
+        summaryRetryCount: 0,
+        summaryLastAttemptAt: 0,
+        summaryNextRetryAt: 0,
+        summaryLastError: undefined,
       }
+    );
+  }
+
+  async getChatLogFileById(id: number): Promise<ChatLogFileRecord | null> {
+    const records = await this.ctx.database.get('chat_log_files', { id });
+    return records.length > 0 ? records[0] : null;
+  }
+
+  async getUnsuccessfulSummaryRecords(
+    date?: string,
+    guildId?: string
+  ): Promise<ChatLogFileRecord[]> {
+    const query: {
+      date?: string;
+      guildId?: string;
+      status: 'uploaded';
+    } = {
+      status: 'uploaded',
+    };
+
+    if (date) {
+      query.date = date;
+    }
+
+    if (guildId !== undefined) {
+      query.guildId = guildId;
+    }
+
+    const records = await this.ctx.database.get('chat_log_files', query);
+    return records.filter((record) => !record.summaryImageUrl);
+  }
+
+  async getSummaryRecordsPendingRetry(currentTime: number): Promise<ChatLogFileRecord[]> {
+    const records = await this.ctx.database.get('chat_log_files', {
+      status: 'uploaded',
+      summaryStatus: 'retrying',
+    });
+
+    return records.filter(
+      (record) =>
+        !record.summaryImageUrl &&
+        typeof record.summaryNextRetryAt === 'number' &&
+        record.summaryNextRetryAt > 0 &&
+        record.summaryNextRetryAt <= currentTime
+    );
+  }
+
+  async getAllSummaryRecordsPendingRetry(): Promise<ChatLogFileRecord[]> {
+    const records = await this.ctx.database.get('chat_log_files', {
+      status: 'uploaded',
+      summaryStatus: 'retrying',
+    });
+
+    return records.filter(
+      (record) =>
+        !record.summaryImageUrl &&
+        typeof record.summaryNextRetryAt === 'number' &&
+        record.summaryNextRetryAt > 0
     );
   }
 

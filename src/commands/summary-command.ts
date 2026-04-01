@@ -1,5 +1,5 @@
 import { Session, h } from 'koishi';
-import { parseDate } from './common';
+import { deleteMessageBestEffort, parseDate } from './common';
 import { CommandDeps } from './types';
 
 async function resolveSummaryImageUrl(
@@ -100,9 +100,7 @@ export async function handleSummaryCheckCommand(
 
     const missingSummaries = await dbOps.getMissingSummaryRecords(startDate, endDate);
 
-    if (tempMessage && tempMessage[0]) {
-      await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-    }
+    await deleteMessageBestEffort(session, tempMessage?.[0]);
 
     if (missingSummaries.length === 0) {
       await sendMessage(session, [
@@ -180,9 +178,7 @@ export async function handleSummaryRetryCommand(
     if (targetGuildId !== undefined) {
       const record = await dbOps.getChatLogFileForRetry(date, targetGuildId);
       if (!record) {
-        if (tempMessage && tempMessage[0]) {
-          await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-        }
+        await deleteMessageBestEffort(session, tempMessage?.[0]);
         const groupInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
         await sendMessage(session, [h.text(`❌ 未找到 ${groupInfo} 在 ${date} 的聊天记录文件`)]);
         return;
@@ -193,9 +189,7 @@ export async function handleSummaryRetryCommand(
       }
 
       const imageUrl = await generateSummaryForRecord(resetSummaryRetryState(record), true);
-      if (tempMessage && tempMessage[0]) {
-        await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-      }
+      await deleteMessageBestEffort(session, tempMessage?.[0]);
 
       const groupInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
       if (imageUrl) {
@@ -212,9 +206,7 @@ export async function handleSummaryRetryCommand(
 
     const allRecords = await dbOps.getChatLogFilesForSummary(date);
     if (allRecords.length === 0) {
-      if (tempMessage && tempMessage[0]) {
-        await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-      }
+      await deleteMessageBestEffort(session, tempMessage?.[0]);
       await sendMessage(session, [h.text(`❌ 未找到 ${date} 的任何聊天记录文件`)]);
       return;
     }
@@ -238,9 +230,7 @@ export async function handleSummaryRetryCommand(
       }
     }
 
-    if (tempMessage && tempMessage[0]) {
-      await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-    }
+    await deleteMessageBestEffort(session, tempMessage?.[0]);
 
     const messageElements: any[] = [
       h.text(`✅ ${date} 的 AI 总结重新生成完成：${successCount}/${allRecords.length} 个成功\n\n`),
@@ -312,9 +302,7 @@ export async function handleSummaryGetCommand(
     const tempMessage = await sendMessage(session, [h.text('🔍 正在获取 AI 总结图片...')]);
     const summaryImageUrl = await dbOps.getSummaryImageUrl(parsedDate, targetGuildId);
 
-    if (tempMessage && tempMessage[0]) {
-      await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-    }
+    await deleteMessageBestEffort(session, tempMessage?.[0]);
 
     if (!summaryImageUrl) {
       const groupInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
@@ -398,9 +386,7 @@ export async function handleSummaryRetryPendingCommand(
     }
 
     if (records.length === 0) {
-      if (tempMessage && tempMessage[0]) {
-        await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-      }
+      await deleteMessageBestEffort(session, tempMessage?.[0]);
 
       const dateInfo = parsedDate ? `${parsedDate} ` : '';
       const scopeInfo = guildId === 'private' ? '私聊' : guildId ? `群组 ${guildId}` : '群聊';
@@ -454,9 +440,7 @@ export async function handleSummaryRetryPendingCommand(
       }
     }
 
-    if (tempMessage && tempMessage[0]) {
-      await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-    }
+    await deleteMessageBestEffort(session, tempMessage?.[0]);
 
     const summaryLines = [
       `✅ 未成功总结补发完成`,

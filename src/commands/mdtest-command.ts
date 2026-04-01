@@ -1,5 +1,5 @@
 import { Session, h } from 'koishi';
-import { generateTestMarkdown } from './common';
+import { deleteMessageBestEffort, generateTestMarkdown } from './common';
 import { CommandDeps } from './types';
 
 export async function handleMdTestCommand(deps: CommandDeps, session: Session): Promise<void> {
@@ -12,9 +12,7 @@ export async function handleMdTestCommand(deps: CommandDeps, session: Session): 
     const testMarkdown = generateTestMarkdown();
     const imageBuffer = await mdToImageService.convertToImage(testMarkdown);
 
-    if (tempMessage && tempMessage[0]) {
-      await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-    }
+    await deleteMessageBestEffort(session, tempMessage?.[0]);
 
     await sendMessage(session, [
       h.text('🎨 Markdown 和 Emoji 渲染测试结果：'),

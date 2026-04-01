@@ -1,5 +1,20 @@
 import { Session, h } from 'koishi';
 
+export async function deleteMessageBestEffort(
+  session: Session,
+  messageId?: string
+): Promise<void> {
+  if (!messageId) {
+    return;
+  }
+
+  try {
+    await session.bot.deleteMessage(session.channelId, messageId);
+  } catch {
+    return;
+  }
+}
+
 export function parseDate(dateInput: string): string | null {
   try {
     const now = new Date();

@@ -1,4 +1,5 @@
 import { Session, h } from 'koishi';
+import { deleteMessageBestEffort } from './common';
 import { CommandDeps } from './types';
 
 export async function handleAnalysisCommand(
@@ -39,16 +40,12 @@ export async function handleAnalysisCommand(
     try {
       parsedQuery = await aiService.parseAnalysisQuery(query, targetGuildId || 'private');
     } catch (error: any) {
-      if (parseMessage && parseMessage[0]) {
-        await session.bot.deleteMessage(session.channelId, parseMessage[0]);
-      }
+      await deleteMessageBestEffort(session, parseMessage?.[0]);
       await sendMessage(session, [h.text(`❌ 查询解析失败：${error?.message || '未知错误'}`)]);
       return;
     }
 
-    if (parseMessage && parseMessage[0]) {
-      await session.bot.deleteMessage(session.channelId, parseMessage[0]);
-    }
+    await deleteMessageBestEffort(session, parseMessage?.[0]);
 
     const fetchMessage = await sendMessage(session, [h.text(`📥 正在获取聊天记录...`)]);
 
@@ -69,9 +66,7 @@ export async function handleAnalysisCommand(
       }
 
       if (filesToProcess.length === 0) {
-        if (fetchMessage && fetchMessage[0]) {
-          await session.bot.deleteMessage(session.channelId, fetchMessage[0]);
-        }
+        await deleteMessageBestEffort(session, fetchMessage?.[0]);
         const guildInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
         await sendMessage(session, [
           h.text(`❌ 未找到 ${guildInfo} 在 ${dateRangeStr} 的聊天记录`),
@@ -81,9 +76,7 @@ export async function handleAnalysisCommand(
 
       const messages = await exportManager['parseMessageFiles'](filesToProcess);
       if (messages.length === 0) {
-        if (fetchMessage && fetchMessage[0]) {
-          await session.bot.deleteMessage(session.channelId, fetchMessage[0]);
-        }
+        await deleteMessageBestEffort(session, fetchMessage?.[0]);
         await sendMessage(session, [h.text(`❌ 该时间段没有聊天记录`)]);
         return;
       }
@@ -91,16 +84,12 @@ export async function handleAnalysisCommand(
       messageCount = messages.length;
       chatContent = exportManager['formatExportContent'](messages, 'txt');
     } catch (error: any) {
-      if (fetchMessage && fetchMessage[0]) {
-        await session.bot.deleteMessage(session.channelId, fetchMessage[0]);
-      }
+      await deleteMessageBestEffort(session, fetchMessage?.[0]);
       await sendMessage(session, [h.text(`❌ 获取聊天记录失败：${error?.message || '未知错误'}`)]);
       return;
     }
 
-    if (fetchMessage && fetchMessage[0]) {
-      await session.bot.deleteMessage(session.channelId, fetchMessage[0]);
-    }
+    await deleteMessageBestEffort(session, fetchMessage?.[0]);
 
     const analyzeMessage = await sendMessage(session, [h.text('🤖 正在进行 AI 分析，请稍候...')]);
 
@@ -113,9 +102,7 @@ export async function handleAnalysisCommand(
         targetGuildId || 'private'
       );
 
-      if (analyzeMessage && analyzeMessage[0]) {
-        await session.bot.deleteMessage(session.channelId, analyzeMessage[0]);
-      }
+      await deleteMessageBestEffort(session, analyzeMessage?.[0]);
 
       const resultMessage =
         `📊 AI 分析结果：\n` +
@@ -126,9 +113,7 @@ export async function handleAnalysisCommand(
 
       await sendMessage(session, [h.text(resultMessage)]);
     } catch (error: any) {
-      if (analyzeMessage && analyzeMessage[0]) {
-        await session.bot.deleteMessage(session.channelId, analyzeMessage[0]);
-      }
+      await deleteMessageBestEffort(session, analyzeMessage?.[0]);
       await sendMessage(session, [h.text(`❌ AI 分析失败：${error?.message || '未知错误'}`)]);
     }
   } catch (error: any) {

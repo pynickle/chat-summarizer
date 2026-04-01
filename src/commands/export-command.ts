@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Session, h } from 'koishi';
 import { ExportRequest } from '../export/export-manager';
-import { extractMessageCount, sendSummaryAsForward } from './common';
+import { deleteMessageBestEffort, extractMessageCount, sendSummaryAsForward } from './common';
 import { CommandDeps } from './types';
 
 async function downloadExportContent(url: string): Promise<string | null> {
@@ -91,9 +91,7 @@ export async function handleExportCommand(
 
     const result = await exportManager.exportChatData(exportRequest);
     if (!result.success || !result.s3Url) {
-      if (tempMessage && tempMessage[0]) {
-        await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-      }
+      await deleteMessageBestEffort(session, tempMessage?.[0]);
       await sendMessage(session, [h.text(result.error || '导出失败')]);
       return;
     }
@@ -135,16 +133,12 @@ export async function handleExportCommand(
               imgTempMessage = await sendMessage(session, [h.text('🖼️ 正在生成总结图片...')]);
               const imageBuffer = await mdToImageService.convertToImage(summary);
 
-              if (imgTempMessage && imgTempMessage[0]) {
-                await session.bot.deleteMessage(session.channelId, imgTempMessage[0]);
-              }
+              await deleteMessageBestEffort(session, imgTempMessage?.[0]);
 
               await sendMessage(session, [h.image(imageBuffer, 'image/png')]);
               responseMessage += '\n\n✅ AI 总结已生成并发送为图片';
             } catch (error: any) {
-              if (imgTempMessage && imgTempMessage[0]) {
-                await session.bot.deleteMessage(session.channelId, imgTempMessage[0]);
-              }
+              await deleteMessageBestEffort(session, imgTempMessage?.[0]);
 
               const errorMessage =
                 responseMessage + '\n\n❌ 图片生成失败：' + (error?.message || '未知错误');
@@ -156,21 +150,15 @@ export async function handleExportCommand(
             responseMessage = '';
           }
 
-          if (aiTempMessage && aiTempMessage[0]) {
-            await session.bot.deleteMessage(session.channelId, aiTempMessage[0]);
-          }
+          await deleteMessageBestEffort(session, aiTempMessage?.[0]);
         }
       } catch (error: any) {
-        if (aiTempMessage && aiTempMessage[0]) {
-          await session.bot.deleteMessage(session.channelId, aiTempMessage[0]);
-        }
+        await deleteMessageBestEffort(session, aiTempMessage?.[0]);
         responseMessage += '\n\n❌ AI 总结过程中发生错误：' + (error?.message || '未知错误');
       }
     }
 
-    if (tempMessage && tempMessage[0]) {
-      await session.bot.deleteMessage(session.channelId, tempMessage[0]);
-    }
+    await deleteMessageBestEffort(session, tempMessage?.[0]);
 
     if (responseMessage.trim()) {
       await sendMessage(session, [h.text(responseMessage)]);

@@ -328,14 +328,11 @@ export class AIService {
       const fileUrls = this.parseUrlArray(record.fileUrls);
 
       for (const imageUrl of imageUrls) {
-        const isManagedS3Url = this.isConfiguredS3Url(imageUrl);
-        const accessibleUrl = await this.toAccessibleUrl(imageUrl);
-        const isExpired = isManagedS3Url ? false : await this.isImageUrlExpired(accessibleUrl);
-        if (isExpired) {
-          expiredImageUrls.push(imageUrl, accessibleUrl);
+        if (!this.isConfiguredS3Url(imageUrl)) {
           continue;
         }
 
+        const accessibleUrl = await this.toAccessibleUrl(imageUrl);
         try {
           mediaParts.push({
             type: 'image',
@@ -347,7 +344,7 @@ export class AIService {
       }
 
       for (const fileUrl of fileUrls) {
-        if (!this.isAudioUrl(fileUrl)) {
+        if (!this.isAudioUrl(fileUrl) || !this.isConfiguredS3Url(fileUrl)) {
           continue;
         }
 

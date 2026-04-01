@@ -1,3 +1,9 @@
+## [1.23.2](https://github.com/pynickle/chat-summarizer/compare/v1.23.1...v1.23.2) (2026-04-01)
+
+### 🐛 Bug Fixes
+
+* make delete msg a try ([c55be0a](https://github.com/pynickle/chat-summarizer/commit/c55be0abd811cf25fe434bb74dab60662c125d92))
+
 ## [1.23.1](https://github.com/pynickle/chat-summarizer/compare/v1.23.0...v1.23.1) (2026-04-01)
 
 ### 🐛 Bug Fixes

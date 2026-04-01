@@ -1,3 +1,13 @@
+## [1.23.1](https://github.com/pynickle/chat-summarizer/compare/v1.23.0...v1.23.1) (2026-04-01)
+
+### 🐛 Bug Fixes
+
+* fix summary images still generating on strict mode ([124cba1](https://github.com/pynickle/chat-summarizer/commit/124cba1cf08cb952e7cb6d0271cf7986865d7b0d))
+
+### 🚀 Improvements
+
+* improve ai responses content block url processing ([ce95a38](https://github.com/pynickle/chat-summarizer/commit/ce95a383b0614d8773f0adabbc4b76ffc395cff9))
+
 ## [1.23.0](https://github.com/pynickle/chat-summarizer/compare/v1.22.10...v1.23.0) (2026-03-31)
 
 ### ✨ Features

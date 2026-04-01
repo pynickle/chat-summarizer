@@ -33,6 +33,10 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
     return config.ai.summaryRetryEnabled !== false;
   };
 
+  const shouldBlockAutoSummaryAfterFailure = (record: ChatLogFileRecord): boolean => {
+    return config.ai.strictSummarySuccess !== false && record.summaryStatus === 'failed';
+  };
+
   const clearRetryScheduler = (recordId: number): void => {
     const timeout = retrySchedulers.get(recordId);
     if (timeout) {
@@ -338,6 +342,13 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
         return record.summaryImageUrl;
       }
 
+      if (shouldBlockAutoSummaryAfterFailure(record)) {
+        logger.warn(
+          `群组 ${groupId} 在 ${dateStr} 的 AI 总结已标记为最终失败，严格模式下跳过后续自动生成`
+        );
+        return;
+      }
+
       logger.info(`开始为群组 ${groupId} 生成 AI 总结 (${dateStr})`);
       const imageUrl = await generateSummaryForRecord(record, true);
       if (imageUrl) {
@@ -417,7 +428,9 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
       const yesterday = getCurrentTimeInUTC8();
       yesterday.setDate(yesterday.getDate() - 1);
       const dateStr = getDateStringInUTC8(yesterday.getTime());
-      const recordsToSummarize = await dbOps.getChatLogFilesForSummary(dateStr);
+      const recordsToSummarize = (await dbOps.getChatLogFilesForSummary(dateStr)).filter(
+        (record) => !shouldBlockAutoSummaryAfterFailure(record)
+      );
 
       if (recordsToSummarize.length === 0) {
         if (config.debug) {

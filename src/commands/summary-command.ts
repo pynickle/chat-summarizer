@@ -188,7 +188,9 @@ export async function handleSummaryRetryCommand(
         await dbOps.clearSummaryImage(record.id!);
       }
 
-      const imageUrl = await generateSummaryForRecord(resetSummaryRetryState(record), true);
+      const imageUrl = await generateSummaryForRecord(resetSummaryRetryState(record), true, {
+        disableAiRetries: true,
+      });
       await deleteMessageBestEffort(session, tempMessage?.[0]);
 
       const groupInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
@@ -219,7 +221,9 @@ export async function handleSummaryRetryCommand(
         if (record.summaryImageUrl) {
           await dbOps.clearSummaryImage(record.id!);
         }
-        const imageUrl = await generateSummaryForRecord(resetSummaryRetryState(record), true);
+        const imageUrl = await generateSummaryForRecord(resetSummaryRetryState(record), true, {
+          disableAiRetries: true,
+        });
         successCount++;
         if (imageUrl) {
           const accessibleImageUrl = await resolveSummaryImageUrl(deps, imageUrl);
@@ -410,7 +414,9 @@ export async function handleSummaryRetryPendingCommand(
           await dbOps.clearSummaryImage(record.id);
         }
 
-        const imageUrl = await generateSummaryForRecord(resetSummaryRetryState(record), true);
+        const imageUrl = await generateSummaryForRecord(resetSummaryRetryState(record), true, {
+          disableAiRetries: true,
+        });
         retriedCount += 1;
 
         if (!record.guildId) {

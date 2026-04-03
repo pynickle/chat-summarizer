@@ -1,9 +1,6 @@
 import { Session, h } from 'koishi';
 
-export async function deleteMessageBestEffort(
-  session: Session,
-  messageId?: string
-): Promise<void> {
+export async function deleteMessageBestEffort(session: Session, messageId?: string): Promise<void> {
   if (!messageId) {
     return;
   }

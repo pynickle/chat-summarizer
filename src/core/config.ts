@@ -110,14 +110,9 @@ export const ConfigSchema: Schema<Config> = Schema.object({
       .description('AI 总结失败时是否禁止使用默认兜底结构并视为成功')
       .default(true),
     summaryRetryEnabled: Schema.boolean().description('AI 总结失败后是否自动重试').default(true),
-    summaryRetryIntervalMinutes: Schema.number()
-      .description('AI 总结自动重试间隔（分钟）')
-      .min(1)
-      .max(1440)
-      .default(5),
     summaryRetryMaxAttempts: Schema.number()
-      .description('AI 总结自动重试次数（不含首次尝试）')
-      .min(0)
+      .description('AI 总结单次生成的最大尝试次数（含首次请求）')
+      .min(1)
       .max(20)
       .default(3),
     model: Schema.string().description('AI 模型名称（如：gpt-5.4）').default('gpt-5.4'),

@@ -24,7 +24,8 @@ export interface SummaryRuntime {
   clearAllSchedulers: () => void;
   generateSummaryForRecord: (
     record: ChatLogFileRecord,
-    skipPush?: boolean
+    skipPush?: boolean,
+    options?: { disableAiRetries?: boolean }
   ) => Promise<string | undefined>;
 }
 

@@ -75,7 +75,6 @@ export interface Config {
     apiMode?: 'chat.completions' | 'responses';
     strictSummarySuccess?: boolean;
     summaryRetryEnabled?: boolean;
-    summaryRetryIntervalMinutes?: number;
     summaryRetryMaxAttempts?: number;
     model?: string; // AI 模型名称（可选）
     maxTokens?: number; // 最大 token 数（可选）

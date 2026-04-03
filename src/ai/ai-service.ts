@@ -4,7 +4,7 @@ import { generateText, type FilePart, type ImagePart, type ModelMessage, type Te
 import { Config, AISummaryOutput } from '../core/types';
 import { handleError } from '../core/utils';
 import { CONSTANTS, STRUCTURED_SYSTEM_PROMPT } from '../core/config';
-import { extractHttpErrorContext, trimForLog } from '../core/error-utils';
+import { extractHttpErrorContext, sanitizeUrlForLog, trimForLog } from '../core/error-utils';
 import {
   buildStructuredSummaryPrompt,
   getDefaultFilePrompt,
@@ -40,7 +40,26 @@ type MediaBuildResult = {
   expiredImageUrls: string[];
 };
 
+type StructuredSummaryOptions = {
+  disableRetries?: boolean;
+};
+
 const EXPIRED_IMAGE_MARKER = '[图片已失效:external_image_url_unavailable]';
+
+export class StructuredSummaryGenerationError extends Error {
+  readonly attempts: number;
+  readonly maxAttempts: number;
+  readonly retryEnabled: boolean;
+
+  constructor(message: string, attempts: number, maxAttempts: number, retryEnabled: boolean) {
+    super(message);
+    this.name = 'StructuredSummaryGenerationError';
+    this.attempts = attempts;
+    this.maxAttempts = maxAttempts;
+    this.retryEnabled = retryEnabled;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
 
 export class AIService {
   private logger: Logger;
@@ -116,6 +135,86 @@ export class AIService {
 
   private getApiMode(): 'chat.completions' | 'responses' {
     return this.config.apiMode === 'responses' ? 'responses' : 'chat.completions';
+  }
+
+  private getStructuredSummaryMaxAttempts(options?: StructuredSummaryOptions): number {
+    if (options?.disableRetries || this.config.summaryRetryEnabled === false) {
+      return 1;
+    }
+
+    return Math.max(this.config.summaryRetryMaxAttempts ?? 3, 1);
+  }
+
+  private toErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return String(error);
+  }
+
+  private sanitizeMessageUrls(message: string): string {
+    return message.replace(/https?:\/\/[^\s'")]+/gu, (url) => sanitizeUrlForLog(url));
+  }
+
+  private extractProviderErrorDetails(message: string): string | null {
+    const payloadStart = message.indexOf('{');
+    const payloadEnd = message.lastIndexOf('}');
+    if (payloadStart < 0 || payloadEnd <= payloadStart) {
+      return null;
+    }
+
+    try {
+      const payload = JSON.parse(message.slice(payloadStart, payloadEnd + 1)) as {
+        error?: {
+          message?: unknown;
+          code?: unknown;
+          param?: unknown;
+        };
+      };
+      const apiError = payload.error;
+      if (!apiError || typeof apiError.message !== 'string' || !apiError.message.trim()) {
+        return null;
+      }
+
+      const details: string[] = [];
+      if (typeof apiError.code === 'string' && apiError.code.trim()) {
+        details.push(`code=${apiError.code}`);
+      }
+      if (typeof apiError.param === 'string' && apiError.param.trim()) {
+        details.push(`param=${apiError.param}`);
+      }
+
+      const baseMessage = this.sanitizeMessageUrls(apiError.message.trim());
+      return details.length > 0 ? `${baseMessage}（${details.join('，')}）` : baseMessage;
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeStructuredSummaryErrorMessage(error: unknown): string {
+    const originalMessage = this.toErrorMessage(error).trim();
+    const traceId = originalMessage.match(/（traceid:\s*([^)]+)）/u)?.[1]?.trim();
+
+    let normalizedMessage = originalMessage;
+    const lastErrorMatch = normalizedMessage.match(/Last error:\s*([\s\S]+)$/u);
+    if (lastErrorMatch?.[1]) {
+      normalizedMessage = lastErrorMatch[1].trim();
+    }
+
+    const providerMessage = this.extractProviderErrorDetails(normalizedMessage);
+    if (providerMessage) {
+      normalizedMessage = providerMessage;
+    }
+
+    normalizedMessage = this.sanitizeMessageUrls(normalizedMessage)
+      .replace(/^AI 总结生成失败[:：]\s*/u, '')
+      .trim();
+
+    if (traceId && !normalizedMessage.includes('traceid:')) {
+      normalizedMessage = `${normalizedMessage}（traceid: ${traceId}）`;
+    }
+
+    return normalizedMessage || '结构化 AI 总结生成失败';
   }
 
   private createInternalS3Uploader(): S3Uploader | null {
@@ -764,7 +863,8 @@ export class AIService {
     timeRange: string,
     messageCount: number,
     guildId: string,
-    uniqueUsers: number
+    uniqueUsers: number,
+    options?: StructuredSummaryOptions
   ): Promise<AISummaryOutput> {
     if (!this.isEnabled(guildId)) {
       throw new Error('AI 总结功能未启用或该群组已禁用 AI 功能');
@@ -774,10 +874,10 @@ export class AIService {
       throw new Error('AI 配置不完整，请检查 API URL 和密钥');
     }
 
-    const maxRetries = 2;
-    let lastError: Error | null = null;
+    const maxAttempts = this.getStructuredSummaryMaxAttempts(options);
+    let lastError: StructuredSummaryGenerationError | null = null;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const groupInfo = this.getGroupInfo(guildId);
 
@@ -791,7 +891,7 @@ export class AIService {
           preparedPayload.textContent
         );
 
-        this.logger.debug(`发送结构化总结请求 (尝试 ${attempt}/${maxRetries})`, {
+        this.logger.debug(`发送结构化总结请求 (尝试 ${attempt}/${maxAttempts})`, {
           url: this.config.apiUrl,
           mode: this.getApiMode(),
           model: this.config.model || 'gpt-5.4',
@@ -828,24 +928,40 @@ export class AIService {
         });
 
         return parsed;
-      } catch (error: any) {
-        lastError = error;
-        this.logger.warn(`结构化总结生成失败 (尝试 ${attempt}/${maxRetries})`, {
-          error: error.message,
-        });
+      } catch (error: unknown) {
+        lastError = new StructuredSummaryGenerationError(
+          this.normalizeStructuredSummaryErrorMessage(error),
+          attempt,
+          maxAttempts,
+          !options?.disableRetries && this.config.summaryRetryEnabled !== false
+        );
 
-        if (attempt < maxRetries) {
-          // 等待一会儿再重试
+        if (attempt < maxAttempts) {
+          this.logger.warn('结构化总结生成失败，准备重试', {
+            attempt,
+            maxAttempts,
+            error: lastError.message,
+          });
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
     }
 
     if (this.config.strictSummarySuccess !== false) {
-      throw new Error(lastError?.message || '结构化 AI 总结生成失败');
+      throw (
+        lastError ||
+        new StructuredSummaryGenerationError(
+          '结构化 AI 总结生成失败',
+          maxAttempts,
+          maxAttempts,
+          !options?.disableRetries && this.config.summaryRetryEnabled !== false
+        )
+      );
     }
 
-    this.logger.error('结构化总结生成最终失败，使用默认结构', {
+    this.logger.warn('结构化总结生成最终失败，使用默认结构', {
+      attempts: lastError?.attempts ?? maxAttempts,
+      maxAttempts,
       error: lastError?.message,
     });
 

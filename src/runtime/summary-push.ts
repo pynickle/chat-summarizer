@@ -45,12 +45,12 @@ export function createSummaryPushService(ctx: Context, config: Config, logger: L
     imageSource: string | Buffer,
     sourceGroupId: string | undefined,
     contentType: string = 'image/png'
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     if (!sourceGroupId) {
       if (config.debug) {
         logger.info('源群组 ID 为空，跳过推送');
       }
-      return;
+      return false;
     }
 
     const groupConfig = config.monitor.groups.find((g) => g.groupId === sourceGroupId);
@@ -58,7 +58,7 @@ export function createSummaryPushService(ctx: Context, config: Config, logger: L
       if (config.debug) {
         logger.info(`群组 ${sourceGroupId} 不在配置列表中，跳过推送`);
       }
-      return;
+      return false;
     }
 
     const effectiveConfig = getEffectiveGroupConfig(config, groupConfig);
@@ -66,7 +66,7 @@ export function createSummaryPushService(ctx: Context, config: Config, logger: L
       if (config.debug) {
         logger.info(`群组 ${sourceGroupId} 已禁用推送`);
       }
-      return;
+      return false;
     }
 
     const targets: string[] = [];
@@ -82,17 +82,27 @@ export function createSummaryPushService(ctx: Context, config: Config, logger: L
       if (config.debug) {
         logger.info(`群组 ${sourceGroupId} 没有配置推送目标`);
       }
-      return;
+      return false;
     }
 
     logger.info(`开始推送群组 ${sourceGroupId} 的总结到 ${targets.length} 个目标`);
+    let hasSuccess = false;
     for (const targetGroupId of targets) {
       try {
-        await pushSummaryToGroup(imageSource, targetGroupId, undefined, undefined, contentType);
+        const pushed = await pushSummaryToGroup(
+          imageSource,
+          targetGroupId,
+          undefined,
+          undefined,
+          contentType
+        );
+        hasSuccess = hasSuccess || pushed;
       } catch (error: any) {
         logger.error(`推送到群组 ${targetGroupId} 失败`, error);
       }
     }
+
+    return hasSuccess;
   };
 
   return {

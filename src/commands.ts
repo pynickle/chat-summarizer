@@ -1,5 +1,5 @@
 import { Context, Session, h } from 'koishi';
-import { Config } from './core/types';
+import { ChatLogFileRecord, Config } from './core/types';
 import { DatabaseOperations } from './data/database';
 import { S3Uploader } from './storage/s3-uploader';
 import { normalizePlatformUserId } from './core/utils';
@@ -20,8 +20,9 @@ export class CommandHandler {
     private getStorageDir: (subDir: string) => string,
     private getNextExecutionTime: (targetTime: string) => Date,
     private generateSummaryForRecord: (
-      record: any,
-      skipPush?: boolean
+      record: ChatLogFileRecord,
+      skipPush?: boolean,
+      options?: { disableAiRetries?: boolean }
     ) => Promise<string | undefined>
   ) {
     const exportManager = new ExportManager(ctx, s3Uploader, getStorageDir);

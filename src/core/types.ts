@@ -79,7 +79,6 @@ export interface Config {
     formatChatContentAsText?: boolean; // 是否将聊天 JSON 转换为文本再交给 AI（可选）
     strictSummarySuccess?: boolean;
     summaryRetryEnabled?: boolean;
-    summaryRetryIntervalMinutes?: number;
     summaryRetryMaxAttempts?: number;
     model?: string; // AI 模型名称（可选）
     maxTokens?: number; // 最大 token 数（可选）

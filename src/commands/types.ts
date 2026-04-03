@@ -1,5 +1,5 @@
 import { Context, Session } from 'koishi';
-import { Config } from '../core/types';
+import { ChatLogFileRecord, Config } from '../core/types';
 import { DatabaseOperations } from '../data/database';
 import { S3Uploader } from '../storage/s3-uploader';
 import { ExportManager } from '../export/export-manager';
@@ -13,7 +13,11 @@ export interface CommandDeps {
   s3Uploader: S3Uploader | null;
   getStorageDir: (subDir: string) => string;
   getNextExecutionTime: (targetTime: string) => Date;
-  generateSummaryForRecord: (record: any, skipPush?: boolean) => Promise<string | undefined>;
+  generateSummaryForRecord: (
+    record: ChatLogFileRecord,
+    skipPush?: boolean,
+    options?: { disableAiRetries?: boolean }
+  ) => Promise<string | undefined>;
   exportManager: ExportManager;
   aiService: AIService;
   mdToImageService: MarkdownToImageService;

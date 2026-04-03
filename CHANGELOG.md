@@ -1,3 +1,9 @@
+## [1.23.3](https://github.com/pynickle/chat-summarizer/compare/v1.23.2...v1.23.3) (2026-04-03)
+
+### 🚀 Improvements
+
+* improve retries logic ([75befad](https://github.com/pynickle/chat-summarizer/commit/75befadcafdb7055f2fa94e7da65d7c1c5b22bdd))
+
 ## [1.23.2](https://github.com/pynickle/chat-summarizer/compare/v1.23.1...v1.23.2) (2026-04-01)
 
 ### 🐛 Bug Fixes

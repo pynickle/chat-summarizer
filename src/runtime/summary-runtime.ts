@@ -49,10 +49,12 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
   const runExclusiveTask = <T>(
     tasks: Map<string, Promise<T>>,
     taskKey: string,
-    factory: () => Promise<T>
+    factory: () => Promise<T>,
+    onReuse?: () => void
   ): Promise<T> => {
     const existingTask = tasks.get(taskKey);
     if (existingTask) {
+      onReuse?.();
       return existingTask;
     }
 
@@ -119,160 +121,173 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
     });
   };
 
+  const generateSummaryForRecordInternal = async (
+    record: ChatLogFileRecord,
+    skipPush: boolean = false,
+    options: { disableAiRetries?: boolean } = {}
+  ): Promise<string | undefined> => {
+    if (!record.s3Key && !record.s3Url) {
+      logger.warn(`记录 ${record.id} 没有可用的 S3 键或 URL，跳过`);
+      return;
+    }
+
+    const s3Uploader = s3Service.getUploader();
+    if (!s3Uploader) {
+      logger.error('S3 上传器未初始化');
+      return;
+    }
+
+    if (record.id) {
+      await markSummaryAttemptStarted(record.id);
+    }
+
+    try {
+      const groupInfo = record.guildId ? `群组 ${record.guildId}` : '私聊';
+      logger.info(`正在为 ${groupInfo} 生成增强版 AI 总结 (${record.date})`);
+
+      let response = '';
+      let sdkDownloadError: string | undefined;
+
+      if (record.s3Key && config.s3.isPrivate) {
+        const sdkResult = await s3Uploader.downloadText(record.s3Key);
+        if (sdkResult.success && sdkResult.content) {
+          response = sdkResult.content;
+          logger.info(`聊天记录下载成功（S3 SDK 鉴权）: ${record.s3Key}`);
+        } else {
+          sdkDownloadError = sdkResult.error || '未知错误';
+          logger.warn(`S3 SDK 下载失败，将回退到 URL 下载：${sdkDownloadError}`);
+        }
+      }
+
+      if (!response) {
+        if (!record.s3Url) {
+          const sdkDetail = sdkDownloadError ? `，S3 SDK 错误：${sdkDownloadError}` : '';
+          throw new Error(`下载聊天记录文件失败（无可用 S3 URL）${sdkDetail}`);
+        }
+
+        try {
+          const downloadResponse = await axios.get<string>(record.s3Url, {
+            timeout: 30000,
+            responseType: 'text',
+          });
+          response = downloadResponse.data;
+          if (!config.s3.isPrivate) {
+            logger.info(`聊天记录下载成功（公开 URL 直链）: ${record.s3Url}`);
+          }
+        } catch (downloadError) {
+          const errorContext = await extractHttpErrorContext(downloadError);
+          logger.error('下载聊天记录文件失败', {
+            recordId: record.id,
+            date: record.date,
+            guildId: record.guildId || 'private',
+            s3Key: record.s3Key,
+            s3Url: sanitizeUrlForLog(record.s3Url),
+            sdkDownloadError,
+            message: errorContext.message,
+            statusCode: errorContext.statusCode,
+            statusText: errorContext.statusText,
+            requestUrl: errorContext.requestUrl,
+            responseBody: errorContext.responseBody,
+          });
+
+          const statusLabel = errorContext.statusCode
+            ? `HTTP ${errorContext.statusCode}`
+            : '未知状态';
+          const statusText = errorContext.statusText ? ` ${errorContext.statusText}` : '';
+          const requestUrl = errorContext.requestUrl
+            ? `，请求地址：${sanitizeUrlForLog(errorContext.requestUrl)}`
+            : '';
+          const detail = errorContext.responseBody
+            ? `，响应详情：${errorContext.responseBody}`
+            : '';
+          const sdkDetail = sdkDownloadError ? `，S3 SDK 错误：${sdkDownloadError}` : '';
+
+          throw new Error(
+            `下载聊天记录文件失败（${statusLabel}${statusText}）${requestUrl}${detail}${sdkDetail}`
+          );
+        }
+      }
+
+      if (!response) {
+        throw new Error('无法下载聊天记录文件');
+      }
+
+      const statisticsService = new StatisticsService(ctx.logger('chat-summarizer:statistics'));
+      const aiService = new AIService(ctx, config);
+      const cardRenderer = new CardRenderer(ctx);
+
+      const messages = statisticsService.parseMessages(response);
+      const statistics = statisticsService.generateStatistics(messages, 10);
+      logger.info(
+        `统计完成：${statistics.basicStats.totalMessages} 条消息，${statistics.basicStats.uniqueUsers} 位用户`
+      );
+
+      const aiContent = await aiService.generateStructuredSummary(
+        response,
+        record.date,
+        statistics.basicStats.totalMessages,
+        record.guildId || 'private',
+        statistics.basicStats.uniqueUsers,
+        {
+          disableRetries: options.disableAiRetries,
+        }
+      );
+
+      const dailyReport: DailyReport = {
+        date: record.date,
+        guildId: record.guildId || 'private',
+        aiContent,
+        statistics,
+        metadata: {
+          generatedAt: Date.now(),
+          aiModel: config.ai.model || 'gpt-5.4',
+        },
+      };
+
+      const imageBuffer = await cardRenderer.renderDailyReport(dailyReport);
+      const imageKey = `summary-images/${record.date}/${record.guildId || 'private'}_${record.id}_${Date.now()}.png`;
+      const uploadResult = await s3Uploader.uploadBuffer(imageBuffer, imageKey, 'image/png');
+
+      if (uploadResult.success && uploadResult.url) {
+        await dbOps.updateChatLogFileSummaryImage(record.id!, uploadResult.url);
+        logger.info(`✅ ${groupInfo} 增强版 AI 总结生成成功：${uploadResult.url}`);
+        if (!skipPush) {
+          const pushed = await pushSummaryToConfiguredGroups(
+            imageBuffer,
+            record.guildId,
+            'image/png'
+          );
+          if (pushed && record.guildId) {
+            pushedSummaryKeys.add(
+              getPushedSummaryKey(record.date, record.guildId, uploadResult.url)
+            );
+          }
+        }
+        return uploadResult.url;
+      }
+
+      throw new Error(`图片上传失败：${uploadResult.error}`);
+    } catch (error: unknown) {
+      await handleSummaryFailure(record, error);
+      throw error;
+    }
+  };
+
   const generateSummaryForRecord = async (
     record: ChatLogFileRecord,
     skipPush: boolean = false,
     options: { disableAiRetries?: boolean } = {}
   ): Promise<string | undefined> => {
+    const taskKey = getGroupTaskKey(record.date, record.guildId);
+
     return runExclusiveTask(
       activeSummaryTasks,
-      getGroupTaskKey(record.date, record.guildId),
-      async () => {
-        if (!record.s3Key && !record.s3Url) {
-          logger.warn(`记录 ${record.id} 没有可用的 S3 键或 URL，跳过`);
-          return;
-        }
-
-        const s3Uploader = s3Service.getUploader();
-        if (!s3Uploader) {
-          logger.error('S3 上传器未初始化');
-          return;
-        }
-
-        if (record.id) {
-          await markSummaryAttemptStarted(record.id);
-        }
-
-        try {
-          const groupInfo = record.guildId ? `群组 ${record.guildId}` : '私聊';
-          logger.info(`正在为 ${groupInfo} 生成增强版 AI 总结 (${record.date})`);
-
-          let response = '';
-          let sdkDownloadError: string | undefined;
-
-          if (record.s3Key && config.s3.isPrivate) {
-            const sdkResult = await s3Uploader.downloadText(record.s3Key);
-            if (sdkResult.success && sdkResult.content) {
-              response = sdkResult.content;
-              logger.info(`聊天记录下载成功（S3 SDK 鉴权）: ${record.s3Key}`);
-            } else {
-              sdkDownloadError = sdkResult.error || '未知错误';
-              logger.warn(`S3 SDK 下载失败，将回退到 URL 下载：${sdkDownloadError}`);
-            }
-          }
-
-          if (!response) {
-            if (!record.s3Url) {
-              const sdkDetail = sdkDownloadError ? `，S3 SDK 错误：${sdkDownloadError}` : '';
-              throw new Error(`下载聊天记录文件失败（无可用 S3 URL）${sdkDetail}`);
-            }
-
-            try {
-              const downloadResponse = await axios.get<string>(record.s3Url, {
-                timeout: 30000,
-                responseType: 'text',
-              });
-              response = downloadResponse.data;
-              if (!config.s3.isPrivate) {
-                logger.info(`聊天记录下载成功（公开 URL 直链）: ${record.s3Url}`);
-              }
-            } catch (downloadError) {
-              const errorContext = await extractHttpErrorContext(downloadError);
-              logger.error('下载聊天记录文件失败', {
-                recordId: record.id,
-                date: record.date,
-                guildId: record.guildId || 'private',
-                s3Key: record.s3Key,
-                s3Url: sanitizeUrlForLog(record.s3Url),
-                sdkDownloadError,
-                message: errorContext.message,
-                statusCode: errorContext.statusCode,
-                statusText: errorContext.statusText,
-                requestUrl: errorContext.requestUrl,
-                responseBody: errorContext.responseBody,
-              });
-
-              const statusLabel = errorContext.statusCode
-                ? `HTTP ${errorContext.statusCode}`
-                : '未知状态';
-              const statusText = errorContext.statusText ? ` ${errorContext.statusText}` : '';
-              const requestUrl = errorContext.requestUrl
-                ? `，请求地址：${sanitizeUrlForLog(errorContext.requestUrl)}`
-                : '';
-              const detail = errorContext.responseBody
-                ? `，响应详情：${errorContext.responseBody}`
-                : '';
-              const sdkDetail = sdkDownloadError ? `，S3 SDK 错误：${sdkDownloadError}` : '';
-
-              throw new Error(
-                `下载聊天记录文件失败（${statusLabel}${statusText}）${requestUrl}${detail}${sdkDetail}`
-              );
-            }
-          }
-
-          if (!response) {
-            throw new Error('无法下载聊天记录文件');
-          }
-
-          const statisticsService = new StatisticsService(ctx.logger('chat-summarizer:statistics'));
-          const aiService = new AIService(ctx, config);
-          const cardRenderer = new CardRenderer(ctx);
-
-          const messages = statisticsService.parseMessages(response);
-          const statistics = statisticsService.generateStatistics(messages, 10);
-          logger.info(
-            `统计完成：${statistics.basicStats.totalMessages} 条消息，${statistics.basicStats.uniqueUsers} 位用户`
-          );
-
-          const aiContent = await aiService.generateStructuredSummary(
-            response,
-            record.date,
-            statistics.basicStats.totalMessages,
-            record.guildId || 'private',
-            statistics.basicStats.uniqueUsers,
-            {
-              disableRetries: options.disableAiRetries,
-            }
-          );
-
-          const dailyReport: DailyReport = {
-            date: record.date,
-            guildId: record.guildId || 'private',
-            aiContent,
-            statistics,
-            metadata: {
-              generatedAt: Date.now(),
-              aiModel: config.ai.model || 'gpt-5.4',
-            },
-          };
-
-          const imageBuffer = await cardRenderer.renderDailyReport(dailyReport);
-          const imageKey = `summary-images/${record.date}/${record.guildId || 'private'}_${record.id}_${Date.now()}.png`;
-          const uploadResult = await s3Uploader.uploadBuffer(imageBuffer, imageKey, 'image/png');
-
-          if (uploadResult.success && uploadResult.url) {
-            await dbOps.updateChatLogFileSummaryImage(record.id!, uploadResult.url);
-            logger.info(`✅ ${groupInfo} 增强版 AI 总结生成成功：${uploadResult.url}`);
-            if (!skipPush) {
-              const pushed = await pushSummaryToConfiguredGroups(
-                imageBuffer,
-                record.guildId,
-                'image/png'
-              );
-              if (pushed && record.guildId) {
-                pushedSummaryKeys.add(
-                  getPushedSummaryKey(record.date, record.guildId, uploadResult.url)
-                );
-              }
-            }
-            return uploadResult.url;
-          }
-
-          throw new Error(`图片上传失败：${uploadResult.error}`);
-        } catch (error: unknown) {
-          await handleSummaryFailure(record, error);
-          throw error;
-        }
+      taskKey,
+      async () => generateSummaryForRecordInternal(record, skipPush, options),
+      () => {
+        logger.info(
+          `AI 总结任务已在执行，复用现有任务（recordId=${record.id ?? 'unknown'}，date=${record.date}，guildId=${record.guildId || 'private'}）`
+        );
       }
     );
   };
@@ -294,41 +309,49 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
     yesterday.setDate(yesterday.getDate() - 1);
     const dateStr = getDateStringInUTC8(yesterday.getTime());
 
-    return runExclusiveTask(activeSummaryTasks, getGroupTaskKey(dateStr, groupId), async () => {
-      try {
-        const record = await dbOps.getChatLogFileForRetry(dateStr, groupId);
+    return runExclusiveTask(
+      activeSummaryTasks,
+      getGroupTaskKey(dateStr, groupId),
+      async () => {
+        try {
+          const record = await dbOps.getChatLogFileForRetry(dateStr, groupId);
 
-        if (!record) {
-          if (config.debug) {
-            logger.info(`群组 ${groupId} 在 ${dateStr} 没有需要生成 AI 总结的记录`);
+          if (!record) {
+            if (config.debug) {
+              logger.info(`群组 ${groupId} 在 ${dateStr} 没有需要生成 AI 总结的记录`);
+            }
+            return;
           }
+
+          if (record.summaryImageUrl) {
+            if (config.debug) {
+              logger.info(`群组 ${groupId} 在 ${dateStr} 已生成过 AI 总结，跳过`);
+            }
+            return record.summaryImageUrl;
+          }
+
+          if (shouldBlockAutoSummaryAfterFailure(record)) {
+            logger.warn(
+              `群组 ${groupId} 在 ${dateStr} 的 AI 总结已标记为最终失败，严格模式下跳过后续自动生成`
+            );
+            return;
+          }
+
+          logger.info(`开始为群组 ${groupId} 生成 AI 总结 (${dateStr})`);
+          const imageUrl = await generateSummaryForRecordInternal(record, true);
+          if (imageUrl) {
+            logger.info(`群组 ${groupId} 的 AI 总结生成成功：${imageUrl}`);
+          }
+          return imageUrl;
+        } catch (error) {
+          logger.error(`群组 ${groupId} 在 ${dateStr} 的 AI 总结执行失败`, error);
           return;
         }
-
-        if (record.summaryImageUrl) {
-          if (config.debug) {
-            logger.info(`群组 ${groupId} 在 ${dateStr} 已生成过 AI 总结，跳过`);
-          }
-          return record.summaryImageUrl;
-        }
-
-        if (shouldBlockAutoSummaryAfterFailure(record)) {
-          logger.warn(
-            `群组 ${groupId} 在 ${dateStr} 的 AI 总结已标记为最终失败，严格模式下跳过后续自动生成`
-          );
-          return;
-        }
-
-        logger.info(`开始为群组 ${groupId} 生成 AI 总结 (${dateStr})`);
-        const imageUrl = await generateSummaryForRecord(record, true);
-        if (imageUrl) {
-          logger.info(`群组 ${groupId} 的 AI 总结生成成功：${imageUrl}`);
-        }
-        return imageUrl;
-      } catch {
-        return;
+      },
+      () => {
+        logger.info(`群组 ${groupId} 在 ${dateStr} 的 AI 总结任务已在执行，等待现有任务完成`);
       }
-    });
+    );
   };
 
   const executeGroupPush = async (groupId: string): Promise<void> => {

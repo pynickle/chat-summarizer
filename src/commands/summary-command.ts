@@ -22,6 +22,10 @@ function isPrivateSession(session: Session): boolean {
   return session.channelId?.startsWith('private:') || !session.guildId;
 }
 
+function getSummaryCommandLogger(deps: CommandDeps) {
+  return deps.ctx.logger('chat-summarizer:summary-command');
+}
+
 function resetSummaryRetryState<
   T extends {
     summaryRetryCount?: number;
@@ -51,6 +55,7 @@ async function pushSummaryImageToGroup(
   imageUrl: string,
   date: string
 ): Promise<boolean> {
+  const logger = getSummaryCommandLogger(deps);
   const messageElements = [h.text(`📊 ${date} AI 总结补发`), h.image(imageUrl)];
 
   for (const bot of deps.ctx.bots) {
@@ -59,7 +64,9 @@ async function pushSummaryImageToGroup(
       return true;
     } catch (error) {
       if (deps.config.debug) {
-        console.warn(`补发总结到群 ${groupId} 失败：`, error);
+        logger.warn(
+          `补发总结到群 ${groupId} 失败：${error instanceof Error ? error.message : String(error)}`
+        );
       }
     }
   }
@@ -73,6 +80,7 @@ export async function handleSummaryCheckCommand(
   days?: string
 ): Promise<void> {
   const { isAdmin, aiService, dbOps, sendMessage } = deps;
+  const logger = getSummaryCommandLogger(deps);
 
   try {
     if (!isAdmin(session.userId)) {
@@ -135,7 +143,7 @@ export async function handleSummaryCheckCommand(
 
     await sendMessage(session, [h.text(responseText)]);
   } catch (error: any) {
-    console.error('检查 AI 总结失败：', error);
+    logger.error('检查 AI 总结失败', error);
     await sendMessage(session, [h.text(`❌ 检查失败：${error?.message || '未知错误'}`)]);
   }
 }
@@ -147,6 +155,7 @@ export async function handleSummaryRetryCommand(
   guildId?: string
 ): Promise<void> {
   const { isAdmin, aiService, dbOps, generateSummaryForRecord, sendMessage } = deps;
+  const logger = getSummaryCommandLogger(deps);
 
   try {
     if (!isAdmin(session.userId)) {
@@ -194,15 +203,23 @@ export async function handleSummaryRetryCommand(
       await deleteMessageBestEffort(session, tempMessage?.[0]);
 
       const groupInfo = targetGuildId ? `群组 ${targetGuildId}` : '私聊';
-      if (imageUrl) {
-        const accessibleImageUrl = await resolveSummaryImageUrl(deps, imageUrl);
+      if (!imageUrl) {
+        logger.error('重新生成 AI 总结未返回图片地址', {
+          recordId: record.id,
+          date,
+          guildId: targetGuildId || 'private',
+        });
         await sendMessage(session, [
-          h.text(`✅ ${groupInfo} 在 ${date} 的 AI 总结重新生成完成\n\n`),
-          h.image(accessibleImageUrl),
+          h.text(`❌ ${groupInfo} 在 ${date} 的 AI 总结未生成成功，请检查运行日志`),
         ]);
-      } else {
-        await sendMessage(session, [h.text(`✅ ${groupInfo} 在 ${date} 的 AI 总结重新生成完成`)]);
+        return;
       }
+
+      const accessibleImageUrl = await resolveSummaryImageUrl(deps, imageUrl);
+      await sendMessage(session, [
+        h.text(`✅ ${groupInfo} 在 ${date} 的 AI 总结重新生成完成\n\n`),
+        h.image(accessibleImageUrl),
+      ]);
       return;
     }
 
@@ -215,6 +232,7 @@ export async function handleSummaryRetryCommand(
 
     let successCount = 0;
     const generatedUrls: Array<{ guildId: string | undefined; url: string }> = [];
+    const failedItems: string[] = [];
 
     for (const record of allRecords) {
       try {
@@ -224,13 +242,24 @@ export async function handleSummaryRetryCommand(
         const imageUrl = await generateSummaryForRecord(resetSummaryRetryState(record), true, {
           disableAiRetries: true,
         });
-        successCount++;
-        if (imageUrl) {
-          const accessibleImageUrl = await resolveSummaryImageUrl(deps, imageUrl);
-          generatedUrls.push({ guildId: record.guildId, url: accessibleImageUrl });
+        if (!imageUrl) {
+          failedItems.push(`${record.date} ${record.guildId || 'private'}（未返回图片地址）`);
+          logger.error('批量重新生成 AI 总结未返回图片地址', {
+            recordId: record.id,
+            date: record.date,
+            guildId: record.guildId || 'private',
+          });
+          continue;
         }
+
+        successCount++;
+        const accessibleImageUrl = await resolveSummaryImageUrl(deps, imageUrl);
+        generatedUrls.push({ guildId: record.guildId, url: accessibleImageUrl });
       } catch (error: any) {
-        console.error(`重新生成总结失败 (${record.guildId || 'private'}):`, error);
+        logger.error(`重新生成总结失败 (${record.guildId || 'private'})`, error);
+        failedItems.push(
+          `${record.date} ${record.guildId || 'private'}：${error?.message || '未知错误'}`
+        );
       }
     }
 
@@ -247,9 +276,20 @@ export async function handleSummaryRetryCommand(
       messageElements.push(h.text('\n'));
     }
 
+    if (failedItems.length > 0) {
+      messageElements.push(
+        h.text(
+          `\n⚠️ 失败记录：\n${failedItems
+            .slice(0, 10)
+            .map((item) => `- ${item}`)
+            .join('\n')}`
+        )
+      );
+    }
+
     await sendMessage(session, messageElements);
   } catch (error: any) {
-    console.error('重新生成 AI 总结失败：', error);
+    logger.error('重新生成 AI 总结失败', error);
     await sendMessage(session, [h.text(`❌ 重新生成失败：${error?.message || '未知错误'}`)]);
   }
 }
@@ -261,6 +301,7 @@ export async function handleSummaryGetCommand(
   guildId?: string
 ): Promise<void> {
   const { isAdmin, aiService, dbOps, sendMessage } = deps;
+  const logger = getSummaryCommandLogger(deps);
 
   try {
     if (!isAdmin(session.userId)) {
@@ -327,7 +368,7 @@ export async function handleSummaryGetCommand(
         h.image(accessibleSummaryImageUrl),
       ]);
     } catch (error: any) {
-      console.error('发送总结图片失败：', error);
+      logger.error('发送总结图片失败', error);
       await sendMessage(session, [
         h.text(
           `❌ 发送图片失败：${error?.message || '未知错误'}\n\n🔗 图片链接：${accessibleSummaryImageUrl}`
@@ -335,7 +376,7 @@ export async function handleSummaryGetCommand(
       ]);
     }
   } catch (error: any) {
-    console.error('获取 AI 总结失败：', error);
+    logger.error('获取 AI 总结失败', error);
     await sendMessage(session, [h.text(`❌ 获取失败：${error?.message || '未知错误'}`)]);
   }
 }
@@ -347,6 +388,7 @@ export async function handleSummaryRetryPendingCommand(
   guildId?: string
 ): Promise<void> {
   const { isAdmin, aiService, dbOps, generateSummaryForRecord, sendMessage } = deps;
+  const logger = getSummaryCommandLogger(deps);
 
   try {
     if (!isAdmin(session.userId)) {
@@ -410,6 +452,12 @@ export async function handleSummaryRetryPendingCommand(
       const groupLabel = record.guildId ? `群组 ${record.guildId}` : '私聊';
 
       try {
+        logger.info('开始重试未成功的 AI 总结记录', {
+          recordId: record.id,
+          date: record.date,
+          guildId: record.guildId || 'private',
+        });
+
         if (record.id) {
           await dbOps.clearSummaryImage(record.id);
         }
@@ -421,6 +469,10 @@ export async function handleSummaryRetryPendingCommand(
 
         if (!record.guildId) {
           privateCount += 1;
+          logger.info('私聊总结重试完成，按设计跳过群发', {
+            recordId: record.id,
+            date: record.date,
+          });
           continue;
         }
 
@@ -438,10 +490,26 @@ export async function handleSummaryRetryPendingCommand(
         );
         if (pushed) {
           pushedCount += 1;
+          logger.info('未成功的 AI 总结已重试并补发到群聊', {
+            recordId: record.id,
+            date: record.date,
+            guildId: record.guildId,
+          });
         } else {
           pushFailedItems.push(`${record.date} ${groupLabel}`);
+          logger.warn('AI 总结重试成功，但补发到群聊失败', {
+            recordId: record.id,
+            date: record.date,
+            guildId: record.guildId,
+          });
         }
       } catch (error: any) {
+        logger.error('重试未成功的 AI 总结记录失败', {
+          recordId: record.id,
+          date: record.date,
+          guildId: record.guildId || 'private',
+          error: error?.message || '未知错误',
+        });
         failedItems.push(`${record.date} ${groupLabel}：${error?.message || '未知错误'}`);
       }
     }
@@ -471,7 +539,7 @@ export async function handleSummaryRetryPendingCommand(
 
     await sendMessage(session, [h.text(summaryLines.join('\n'))]);
   } catch (error: any) {
-    console.error('重试未成功 AI 总结失败：', error);
+    logger.error('重试未成功 AI 总结失败', error);
     await sendMessage(session, [h.text(`❌ 重试失败：${error?.message || '未知错误'}`)]);
   }
 }

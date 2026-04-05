@@ -1,3 +1,9 @@
+## [1.23.4](https://github.com/pynickle/chat-summarizer/compare/v1.23.3...v1.23.4) (2026-04-05)
+
+### 🐛 Bug Fixes
+
+* prevent summary tasks from hanging ([be4d93b](https://github.com/pynickle/chat-summarizer/commit/be4d93ba81709fa59ad71f80a7c715049a9f122b))
+
 ## [1.23.3](https://github.com/pynickle/chat-summarizer/compare/v1.23.2...v1.23.3) (2026-04-03)
 
 ### 🚀 Improvements

@@ -1,3 +1,9 @@
+## [1.25.0](https://github.com/pynickle/chat-summarizer/compare/v1.24.0...v1.25.0) (2026-04-06)
+
+### ✨ Features
+
+* add media retention ([da69e12](https://github.com/pynickle/chat-summarizer/commit/da69e1204b79cca2605b29ad232da4b61e277220))
+
 ## [1.24.0](https://github.com/pynickle/chat-summarizer/compare/v1.23.4...v1.24.0) (2026-04-06)
 
 ### ✨ Features

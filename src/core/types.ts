@@ -76,6 +76,7 @@ export interface Config {
     apiMode?: 'chat.completions' | 'responses';
     webSearchEnabled?: boolean; // AI 是否启用 web search 能力（可选）
     useResponsesContentBlocks?: boolean; // responses 模式是否使用 content block（可选）
+    skipEmojiLinksInResponsesContentBlocks?: boolean;
     formatChatContentAsText?: boolean; // 是否将聊天 JSON 转换为文本再交给 AI（可选）
     strictSummarySuccess?: boolean;
     summaryRetryEnabled?: boolean;

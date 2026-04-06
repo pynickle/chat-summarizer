@@ -102,6 +102,9 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     webSearchEnabled: Schema.boolean().description('是否启用 AI Web Search 能力').default(true),
     useResponsesContentBlocks: Schema.boolean()
       .description('responses 模式下是否将图片/语音链接转换为 content block（视频保持文本链接）')
+      .default(false),
+    skipEmojiLinksInResponsesContentBlocks: Schema.boolean()
+      .description('开启 content block 转换时，是否跳过将表情图片链接转换为 content block')
       .default(true),
     formatChatContentAsText: Schema.boolean()
       .description('是否将聊天 JSON 转换为文本后再发送给 AI（仅影响 AI 输入，不影响原始存储）')

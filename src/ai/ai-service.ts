@@ -242,6 +242,18 @@ export class AIService {
     return this.getApiMode() === 'responses' && this.config.useResponsesContentBlocks !== false;
   }
 
+  private shouldSkipEmojiLinksInContentBlocks(): boolean {
+    return (
+      this.isResponsesContentBlocksEnabled() &&
+      this.config.skipEmojiLinksInResponsesContentBlocks !== false
+    );
+  }
+
+  private isEmojiImageUrl(record: MessageRecord, imageUrl: string): boolean {
+    const message = record.content || record.message || '';
+    return message.includes(`[表情包：${imageUrl}]`);
+  }
+
   private isAudioUrl(url: string): boolean {
     return /\.(mp3|wav|m4a|aac|ogg|oga|opus|flac|amr|webm)(\?|$)/i.test(url);
   }
@@ -428,6 +440,10 @@ export class AIService {
 
       for (const imageUrl of imageUrls) {
         if (!this.isConfiguredS3Url(imageUrl)) {
+          continue;
+        }
+
+        if (this.shouldSkipEmojiLinksInContentBlocks() && this.isEmojiImageUrl(record, imageUrl)) {
           continue;
         }
 

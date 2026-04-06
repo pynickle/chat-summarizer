@@ -20,6 +20,7 @@ import {
 import {
   downloadFile,
   downloadText,
+  deleteObjects,
   generatePublicUrl,
   generateSignedUrl,
   listFiles,
@@ -531,6 +532,12 @@ export class S3Uploader {
     prefix?: string
   ): Promise<{ success: boolean; files?: string[]; error?: string }> {
     return listFiles(this.client, this.config, prefix);
+  }
+
+  public async deleteObjects(
+    keys: string[]
+  ): Promise<{ success: boolean; deletedKeys?: string[]; failedKeys?: string[]; error?: string }> {
+    return deleteObjects(this.client, this.config, keys);
   }
 
   /**

@@ -13,6 +13,11 @@ export const ConfigSchema: Schema<Config> = Schema.object({
       .pattern(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/)
       .default('02:00'),
     retentionDays: Schema.number().description('本地文件保留天数').min(1).max(365).default(3),
+    mediaRetentionDays: Schema.number()
+      .description('媒体文件保留天数（图片/文件/视频，0 表示不自动清理）')
+      .min(0)
+      .max(365)
+      .default(0),
     maxFileSize: Schema.number()
       .description('单个日志文件最大大小 (MB)')
       .min(1)

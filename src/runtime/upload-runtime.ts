@@ -375,16 +375,116 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
         logger.info('开始执行数据库清理');
       }
 
-      const result = await dbOps.cleanupExpiredRecords(config.chatLog.dbRetentionHours);
+      const result = await dbOps.cleanupExpiredRecords(
+        config.chatLog.dbRetentionHours,
+        config.chatLog.mediaRetentionDays
+      );
+      const s3Uploader = s3Service.getUploader();
+      const mediaKeys = [
+        ...result.expiredImageRecords.map((record) => record.s3Key),
+        ...result.expiredFileRecords.map((record) => record.s3Key),
+        ...result.expiredVideoRecords.map((record) => record.s3Key),
+      ];
+
+      let deletedImageRecords = result.deletedImageRecords;
+      let deletedFileRecords = result.deletedFileRecords;
+      let deletedVideoRecords = result.deletedVideoRecords;
+
+      if (config.chatLog.mediaRetentionDays > 0 && mediaKeys.length > 0) {
+        if (!s3Uploader) {
+          logger.warn(
+            `检测到 ${mediaKeys.length} 个过期媒体对象，但 S3 上传器未初始化，已跳过媒体清理`
+          );
+        } else {
+          const expiredImageRecordIds = new Set(
+            result.expiredImageRecords
+              .map((record) => record.id)
+              .filter((id): id is number => typeof id === 'number')
+          );
+          const expiredFileRecordIds = new Set(
+            result.expiredFileRecords
+              .map((record) => record.id)
+              .filter((id): id is number => typeof id === 'number')
+          );
+          const expiredVideoRecordIds = new Set(
+            result.expiredVideoRecords
+              .map((record) => record.id)
+              .filter((id): id is number => typeof id === 'number')
+          );
+
+          const uniqueMediaKeys = Array.from(new Set(mediaKeys));
+          const referenceSnapshot = await dbOps.getMediaReferenceSnapshotByKeys(uniqueMediaKeys);
+          const deletableKeys = Array.from(
+            new Set(
+              uniqueMediaKeys.filter((key) => {
+                const referencedByActiveImage = referenceSnapshot.imageRecords.some(
+                  (record) => record.s3Key === key && typeof record.id === 'number' && !expiredImageRecordIds.has(record.id)
+                );
+                const referencedByActiveFile = referenceSnapshot.fileRecords.some(
+                  (record) => record.s3Key === key && typeof record.id === 'number' && !expiredFileRecordIds.has(record.id)
+                );
+                const referencedByActiveVideo = referenceSnapshot.videoRecords.some(
+                  (record) => record.s3Key === key && typeof record.id === 'number' && !expiredVideoRecordIds.has(record.id)
+                );
+
+                return !referencedByActiveImage && !referencedByActiveFile && !referencedByActiveVideo;
+              })
+            )
+          );
+
+          const deleteResult = await s3Uploader.deleteObjects(deletableKeys);
+          const deletedKeySet = new Set(deleteResult.deletedKeys || []);
+
+          if (deletedKeySet.size > 0) {
+            const mediaDeleteSummary = await dbOps.deleteMediaRecordsByIds({
+              imageRecordIds: result.expiredImageRecords
+                .filter((record) => deletedKeySet.has(record.s3Key))
+                .map((record) => record.id)
+                .filter((id): id is number => typeof id === 'number'),
+              fileRecordIds: result.expiredFileRecords
+                .filter((record) => deletedKeySet.has(record.s3Key))
+                .map((record) => record.id)
+                .filter((id): id is number => typeof id === 'number'),
+              videoRecordIds: result.expiredVideoRecords
+                .filter((record) => deletedKeySet.has(record.s3Key))
+                .map((record) => record.id)
+                .filter((id): id is number => typeof id === 'number'),
+            });
+            deletedImageRecords = mediaDeleteSummary.deletedImageRecords;
+            deletedFileRecords = mediaDeleteSummary.deletedFileRecords;
+            deletedVideoRecords = mediaDeleteSummary.deletedVideoRecords;
+
+            if (config.debug) {
+              logger.info(
+                `已清理 ${deletedKeySet.size} 个过期媒体对象 (保留${config.chatLog.mediaRetentionDays}天)`
+              );
+            }
+          }
+
+          if (deleteResult.error) {
+            logger.warn(`媒体文件清理存在未完成项：${deleteResult.error}`);
+          }
+
+          const skippedSharedKeys = uniqueMediaKeys.length - deletableKeys.length;
+          if (config.debug && skippedSharedKeys > 0) {
+            logger.info(`跳过 ${skippedSharedKeys} 个仍被未过期记录引用的媒体对象`);
+          }
+        }
+      } else if (config.chatLog.mediaRetentionDays > 0) {
+        deletedImageRecords = 0;
+        deletedFileRecords = 0;
+        deletedVideoRecords = 0;
+      }
+
       const totalDeleted =
         result.deletedChatRecords +
-        result.deletedImageRecords +
-        result.deletedFileRecords +
-        result.deletedVideoRecords;
+        deletedImageRecords +
+        deletedFileRecords +
+        deletedVideoRecords;
 
       if (totalDeleted > 0) {
         logger.info(
-          `数据库清理完成：删除 ${result.deletedChatRecords} 条聊天记录，${result.deletedImageRecords} 条图片记录，${result.deletedFileRecords} 条文件记录，${result.deletedVideoRecords} 条视频记录`
+          `数据库清理完成：删除 ${result.deletedChatRecords} 条聊天记录，${deletedImageRecords} 条图片记录，${deletedFileRecords} 条文件记录，${deletedVideoRecords} 条视频记录`
         );
       } else if (config.debug) {
         logger.info('数据库清理完成：没有过期记录需要清理');

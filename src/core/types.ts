@@ -53,6 +53,7 @@ export interface Config {
     maxFileSize: number; // 单个日志文件最大大小 (MB)
     autoUploadTime: string; // 自动上传时间（HH:mm 格式）
     retentionDays: number; // 本地文件保留天数
+    mediaRetentionDays: number;
     dbRetentionHours: number; // 数据库记录保留小时数（建议 24 小时，用作缓存）
   };
 

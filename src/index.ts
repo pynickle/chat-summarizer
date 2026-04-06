@@ -117,6 +117,7 @@ export function apply(ctx: Context, config: Config) {
       if (config.debug) {
         logger.info('插件初始化完成 (调试模式已开启)');
         logger.info(`数据库记录保留时间：${config.chatLog.dbRetentionHours} 小时`);
+        logger.info(`媒体文件保留天数：${config.chatLog.mediaRetentionDays} 天`);
 
         for (const groupConfig of config.monitor.groups) {
           const defaultSummaryTime = config.ai.defaultSummaryTime || '03:00';

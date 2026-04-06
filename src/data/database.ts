@@ -117,6 +117,10 @@ export function extendDatabase(ctx: Context) {
 export class DatabaseOperations {
   constructor(private ctx: Context) {}
 
+  private getMediaRetentionCutoff(mediaRetentionDays: number): number {
+    return Date.now() - mediaRetentionDays * 24 * 60 * 60 * 1000;
+  }
+
   // 创建聊天记录
   async createChatRecord(record: Omit<ChatRecord, 'id'>): Promise<ChatRecord> {
     const result = await this.ctx.database.create('chat_records', record);
@@ -413,11 +417,14 @@ export class DatabaseOperations {
   }
 
   // 清理过期的数据库记录
-  async cleanupExpiredRecords(retentionHours: number): Promise<{
+  async cleanupExpiredRecords(retentionHours: number, mediaRetentionDays: number): Promise<{
     deletedChatRecords: number;
     deletedImageRecords: number;
     deletedFileRecords: number;
     deletedVideoRecords: number;
+    expiredImageRecords: ImageRecord[];
+    expiredFileRecords: FileRecord[];
+    expiredVideoRecords: VideoRecord[];
   }> {
     try {
       const cutoffTime = Date.now() - retentionHours * 60 * 60 * 1000;
@@ -434,43 +441,55 @@ export class DatabaseOperations {
         timestamp: { $lt: cutoffTime },
       });
 
-      // 删除关联的图片记录
-      let deletedImageRecords = 0;
-      if (expiredMessageIds.length > 0) {
-        const imageRecordsToDelete = await this.ctx.database.get('image_records', {
-          messageId: { $in: expiredMessageIds },
-        });
-        deletedImageRecords = imageRecordsToDelete.length;
+      const shouldCleanupMedia = mediaRetentionDays > 0;
+      const mediaCutoffTime = shouldCleanupMedia
+        ? this.getMediaRetentionCutoff(mediaRetentionDays)
+        : cutoffTime;
 
+      const expiredImageRecords = shouldCleanupMedia
+        ? await this.ctx.database.get('image_records', {
+            uploadedAt: { $lt: mediaCutoffTime },
+          })
+        : expiredMessageIds.length > 0
+          ? await this.ctx.database.get('image_records', {
+              messageId: { $in: expiredMessageIds },
+            })
+          : [];
+      const expiredFileRecords = shouldCleanupMedia
+        ? await this.ctx.database.get('file_records', {
+            uploadedAt: { $lt: mediaCutoffTime },
+          })
+        : expiredMessageIds.length > 0
+          ? await this.ctx.database.get('file_records', {
+              messageId: { $in: expiredMessageIds },
+            })
+          : [];
+      const expiredVideoRecords = shouldCleanupMedia
+        ? await this.ctx.database.get('video_records', {
+            uploadedAt: { $lt: mediaCutoffTime },
+          })
+        : expiredMessageIds.length > 0
+          ? await this.ctx.database.get('video_records', {
+              messageId: { $in: expiredMessageIds },
+            })
+          : [];
+
+      const deletedImageRecords = expiredImageRecords.length;
+      const deletedFileRecords = expiredFileRecords.length;
+      const deletedVideoRecords = expiredVideoRecords.length;
+
+      if (!shouldCleanupMedia) {
         if (deletedImageRecords > 0) {
           await this.ctx.database.remove('image_records', {
             messageId: { $in: expiredMessageIds },
           });
         }
-      }
-
-      // 删除关联的文件记录
-      let deletedFileRecords = 0;
-      if (expiredMessageIds.length > 0) {
-        const fileRecordsToDelete = await this.ctx.database.get('file_records', {
-          messageId: { $in: expiredMessageIds },
-        });
-        deletedFileRecords = fileRecordsToDelete.length;
 
         if (deletedFileRecords > 0) {
           await this.ctx.database.remove('file_records', {
             messageId: { $in: expiredMessageIds },
           });
         }
-      }
-
-      // 删除关联的视频记录
-      let deletedVideoRecords = 0;
-      if (expiredMessageIds.length > 0) {
-        const videoRecordsToDelete = await this.ctx.database.get('video_records', {
-          messageId: { $in: expiredMessageIds },
-        });
-        deletedVideoRecords = videoRecordsToDelete.length;
 
         if (deletedVideoRecords > 0) {
           await this.ctx.database.remove('video_records', {
@@ -484,9 +503,78 @@ export class DatabaseOperations {
         deletedImageRecords,
         deletedFileRecords,
         deletedVideoRecords,
+        expiredImageRecords,
+        expiredFileRecords,
+        expiredVideoRecords,
       };
     } catch (error: any) {
       throw new Error(`清理过期记录失败：${error?.message || '未知错误'}`);
     }
+  }
+
+  async deleteMediaRecordsByIds(input: {
+    imageRecordIds?: number[];
+    fileRecordIds?: number[];
+    videoRecordIds?: number[];
+  }): Promise<{
+    deletedImageRecords: number;
+    deletedFileRecords: number;
+    deletedVideoRecords: number;
+  }> {
+    const imageRecordIds = input.imageRecordIds?.filter((id) => Number.isFinite(id)) || [];
+    const fileRecordIds = input.fileRecordIds?.filter((id) => Number.isFinite(id)) || [];
+    const videoRecordIds = input.videoRecordIds?.filter((id) => Number.isFinite(id)) || [];
+
+    if (imageRecordIds.length > 0) {
+      await this.ctx.database.remove('image_records', {
+        id: { $in: imageRecordIds },
+      });
+    }
+
+    if (fileRecordIds.length > 0) {
+      await this.ctx.database.remove('file_records', {
+        id: { $in: fileRecordIds },
+      });
+    }
+
+    if (videoRecordIds.length > 0) {
+      await this.ctx.database.remove('video_records', {
+        id: { $in: videoRecordIds },
+      });
+    }
+
+    return {
+      deletedImageRecords: imageRecordIds.length,
+      deletedFileRecords: fileRecordIds.length,
+      deletedVideoRecords: videoRecordIds.length,
+    };
+  }
+
+  async getMediaReferenceSnapshotByKeys(keys: string[]): Promise<{
+    imageRecords: ImageRecord[];
+    fileRecords: FileRecord[];
+    videoRecords: VideoRecord[];
+  }> {
+    const uniqueKeys = Array.from(new Set(keys.map((key) => key.trim()).filter((key) => key.length > 0)));
+
+    if (uniqueKeys.length === 0) {
+      return {
+        imageRecords: [],
+        fileRecords: [],
+        videoRecords: [],
+      };
+    }
+
+    const [imageRecords, fileRecords, videoRecords] = await Promise.all([
+      this.ctx.database.get('image_records', { s3Key: { $in: uniqueKeys } }),
+      this.ctx.database.get('file_records', { s3Key: { $in: uniqueKeys } }),
+      this.ctx.database.get('video_records', { s3Key: { $in: uniqueKeys } }),
+    ]);
+
+    return {
+      imageRecords,
+      fileRecords,
+      videoRecords,
+    };
   }
 }

@@ -1,4 +1,4 @@
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import axios from 'axios';
 import { handleError } from '../core/utils';
@@ -88,6 +88,80 @@ export async function listFiles(
     return { success: true, files };
   } catch (error: any) {
     return { success: false, error: handleError(error, '获取文件列表失败') };
+  }
+}
+
+export async function deleteObjects(
+  client: S3Client,
+  config: S3Config,
+  keys: string[]
+): Promise<{
+  success: boolean;
+  deletedKeys?: string[];
+  failedKeys?: string[];
+  error?: string;
+}> {
+  try {
+    const normalizedKeys = Array.from(
+      new Set(
+        keys
+          .map((key) => key.trim())
+          .filter((key) => key.length > 0)
+          .map((key) => resolveObjectKey(config, key))
+      )
+    );
+
+    if (normalizedKeys.length === 0) {
+      return { success: true, deletedKeys: [], failedKeys: [] };
+    }
+
+    const deletedKeys: string[] = [];
+    const failedKeys: string[] = [];
+    const errorMessages: string[] = [];
+
+    for (let index = 0; index < normalizedKeys.length; index += 1000) {
+      const batch = normalizedKeys.slice(index, index + 1000);
+      const command = new DeleteObjectsCommand({
+        Bucket: config.bucket,
+        Delete: {
+          Objects: batch.map((key) => ({ Key: key })),
+          Quiet: false,
+        },
+      });
+
+      const response = await client.send(command);
+      const batchDeleted = (response.Deleted || [])
+        .map((item) => item.Key)
+        .filter((key): key is string => Boolean(key));
+      const batchFailed = (response.Errors || [])
+        .map((item) => item.Key)
+        .filter((key): key is string => Boolean(key));
+
+      deletedKeys.push(...batchDeleted.map((key) => stripPathPrefix(config.pathPrefix, key)));
+      failedKeys.push(...batchFailed.map((key) => stripPathPrefix(config.pathPrefix, key)));
+
+      if (response.Errors && response.Errors.length > 0) {
+        errorMessages.push(
+          ...response.Errors.map(
+            (item) => `${item.Key || 'unknown'}: ${item.Message || '删除失败'}`
+          )
+        );
+      }
+    }
+
+    return {
+      success: failedKeys.length === 0,
+      deletedKeys,
+      failedKeys,
+      error: errorMessages.length > 0 ? `删除 S3 对象失败：${errorMessages.join('; ')}` : undefined,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      deletedKeys: [],
+      failedKeys: [],
+      error: handleError(error, '删除 S3 对象失败'),
+    };
   }
 }
 

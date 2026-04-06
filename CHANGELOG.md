@@ -1,3 +1,9 @@
+## [1.24.0](https://github.com/pynickle/chat-summarizer/compare/v1.23.4...v1.24.0) (2026-04-06)
+
+### ✨ Features
+
+* add skip emoji links in responses content block ([bacb54a](https://github.com/pynickle/chat-summarizer/commit/bacb54a9ff097d4b061c33e71485b094c5ceb067))
+
 ## [1.23.4](https://github.com/pynickle/chat-summarizer/compare/v1.23.3...v1.23.4) (2026-04-05)
 
 ### 🐛 Bug Fixes

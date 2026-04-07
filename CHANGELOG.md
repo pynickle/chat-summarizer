@@ -1,3 +1,9 @@
+## [1.25.1](https://github.com/pynickle/chat-summarizer/compare/v1.25.0...v1.25.1) (2026-04-07)
+
+### 🐛 Bug Fixes
+
+* fix media retention days not working ([9eb7c89](https://github.com/pynickle/chat-summarizer/commit/9eb7c89d37d0636b71a5399704b4fd9e8aa4ab6d))
+
 ## [1.25.0](https://github.com/pynickle/chat-summarizer/compare/v1.24.0...v1.25.0) (2026-04-06)
 
 ### ✨ Features

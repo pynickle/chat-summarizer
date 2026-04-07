@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getCurrentTimeInUTC8, getDateStringInUTC8 } from '../core/utils';
+import { expandObjectKeyCandidates, normalizeObjectKeyForComparison } from '../storage/s3-object-ops';
 import { S3Uploader, UploadResult } from '../storage/s3-uploader';
 import { RuntimeDeps, UploadRuntime } from './plugin-types';
 
@@ -412,19 +413,35 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
               .filter((id): id is number => typeof id === 'number')
           );
 
-          const uniqueMediaKeys = Array.from(new Set(mediaKeys));
-          const referenceSnapshot = await dbOps.getMediaReferenceSnapshotByKeys(uniqueMediaKeys);
+          const normalizeMediaKey = (key: string) => normalizeObjectKeyForComparison(config.s3, key);
+          const uniqueMediaKeys = Array.from(
+            new Set(mediaKeys.map((key) => key.trim()).filter((key) => key.length > 0))
+          );
+          const referenceSnapshot = await dbOps.getMediaReferenceSnapshotByKeys(
+            Array.from(
+              new Set(uniqueMediaKeys.flatMap((key) => expandObjectKeyCandidates(config.s3, key)))
+            )
+          );
           const deletableKeys = Array.from(
             new Set(
               uniqueMediaKeys.filter((key) => {
                 const referencedByActiveImage = referenceSnapshot.imageRecords.some(
-                  (record) => record.s3Key === key && typeof record.id === 'number' && !expiredImageRecordIds.has(record.id)
+                  (record) =>
+                    normalizeMediaKey(record.s3Key) === normalizeMediaKey(key) &&
+                    typeof record.id === 'number' &&
+                    !expiredImageRecordIds.has(record.id)
                 );
                 const referencedByActiveFile = referenceSnapshot.fileRecords.some(
-                  (record) => record.s3Key === key && typeof record.id === 'number' && !expiredFileRecordIds.has(record.id)
+                  (record) =>
+                    normalizeMediaKey(record.s3Key) === normalizeMediaKey(key) &&
+                    typeof record.id === 'number' &&
+                    !expiredFileRecordIds.has(record.id)
                 );
                 const referencedByActiveVideo = referenceSnapshot.videoRecords.some(
-                  (record) => record.s3Key === key && typeof record.id === 'number' && !expiredVideoRecordIds.has(record.id)
+                  (record) =>
+                    normalizeMediaKey(record.s3Key) === normalizeMediaKey(key) &&
+                    typeof record.id === 'number' &&
+                    !expiredVideoRecordIds.has(record.id)
                 );
 
                 return !referencedByActiveImage && !referencedByActiveFile && !referencedByActiveVideo;
@@ -433,20 +450,22 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
           );
 
           const deleteResult = await s3Uploader.deleteObjects(deletableKeys);
-          const deletedKeySet = new Set(deleteResult.deletedKeys || []);
+          const deletedKeySet = new Set(
+            (deleteResult.deletedKeys || []).map((key) => normalizeMediaKey(key))
+          );
 
           if (deletedKeySet.size > 0) {
             const mediaDeleteSummary = await dbOps.deleteMediaRecordsByIds({
               imageRecordIds: result.expiredImageRecords
-                .filter((record) => deletedKeySet.has(record.s3Key))
+                .filter((record) => deletedKeySet.has(normalizeMediaKey(record.s3Key)))
                 .map((record) => record.id)
                 .filter((id): id is number => typeof id === 'number'),
               fileRecordIds: result.expiredFileRecords
-                .filter((record) => deletedKeySet.has(record.s3Key))
+                .filter((record) => deletedKeySet.has(normalizeMediaKey(record.s3Key)))
                 .map((record) => record.id)
                 .filter((id): id is number => typeof id === 'number'),
               videoRecordIds: result.expiredVideoRecords
-                .filter((record) => deletedKeySet.has(record.s3Key))
+                .filter((record) => deletedKeySet.has(normalizeMediaKey(record.s3Key)))
                 .map((record) => record.id)
                 .filter((id): id is number => typeof id === 'number'),
             });

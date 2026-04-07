@@ -4,6 +4,8 @@ import axios from 'axios';
 import { handleError } from '../core/utils';
 import type { S3Config } from './s3-uploader';
 
+type ObjectKeyConfig = Pick<S3Config, 'pathPrefix'>;
+
 function withPathPrefix(pathPrefix: string, value: string): string {
   const normalizedValue = value.replace(/^\/+/, '');
   if (!pathPrefix || pathPrefix.trim() === '') {
@@ -37,6 +39,22 @@ function stripPathPrefix(pathPrefix: string, key: string): string {
   return key;
 }
 
+export function normalizeObjectKeyForComparison(config: ObjectKeyConfig, key: string): string {
+  return stripPathPrefix(config.pathPrefix, resolveObjectKey(config, key).trim());
+}
+
+export function expandObjectKeyCandidates(config: ObjectKeyConfig, key: string): string[] {
+  const rawKey = key.trim();
+  if (!rawKey) {
+    return [];
+  }
+
+  const resolvedKey = resolveObjectKey(config, rawKey);
+  const normalizedKey = normalizeObjectKeyForComparison(config, rawKey);
+
+  return Array.from(new Set([rawKey, resolvedKey, normalizedKey].filter((value) => value.length > 0)));
+}
+
 export function generatePublicUrl(config: S3Config, key: string): string {
   const cleanKey = key.startsWith('/') ? key.substring(1) : key;
   if (config.endpoint) {
@@ -45,7 +63,7 @@ export function generatePublicUrl(config: S3Config, key: string): string {
   return `https://${config.bucket}.s3.${config.region}.amazonaws.com/${cleanKey}`;
 }
 
-export function resolveObjectKey(config: S3Config, key: string): string {
+export function resolveObjectKey(config: ObjectKeyConfig, key: string): string {
   return withPathPrefix(config.pathPrefix, key);
 }
 

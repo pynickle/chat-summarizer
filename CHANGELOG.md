@@ -1,3 +1,9 @@
+## [1.26.0](https://github.com/pynickle/chat-summarizer/compare/v1.25.1...v1.26.0) (2026-04-10)
+
+### ✨ Features
+
+* add manual trigger for cleanup database ([018ee6b](https://github.com/pynickle/chat-summarizer/commit/018ee6b47ab59ef2985664d283076c3ac89c367b))
+
 ## [1.25.1](https://github.com/pynickle/chat-summarizer/compare/v1.25.0...v1.25.1) (2026-04-07)
 
 ### 🐛 Bug Fixes

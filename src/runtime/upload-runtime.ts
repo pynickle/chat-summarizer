@@ -1,6 +1,12 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { DatabaseCleanupSummary, LocalFileCleanupSummary } from '../core/types';
+import {
+  DatabaseCleanupSummary,
+  FileRecord,
+  ImageRecord,
+  LocalFileCleanupSummary,
+  VideoRecord,
+} from '../core/types';
 import { getCurrentTimeInUTC8, getDateStringInUTC8 } from '../core/utils';
 import { expandObjectKeyCandidates, normalizeObjectKeyForComparison } from '../storage/s3-object-ops';
 import { S3Uploader, UploadResult } from '../storage/s3-uploader';
@@ -22,9 +28,28 @@ export function getNextExecutionTime(targetTime: string): Date {
 
 export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
   const { ctx, config, logger, dbOps, s3Service, getStorageDir } = deps;
+  const managedMediaKeyRoots = ['images/', 'files/', 'videos/'];
 
   let uploadScheduler: NodeJS.Timeout | null = null;
   let cleanupScheduler: NodeJS.Timeout | null = null;
+
+  const isManagedMediaRecord = (
+    record: Pick<ImageRecord | FileRecord | VideoRecord, 's3Key' | 's3Url'>,
+    s3Uploader: S3Uploader | null
+  ): boolean => {
+    const normalizedKey = normalizeObjectKeyForComparison(config.s3, record.s3Key || '');
+    const hasManagedKeyRoot = managedMediaKeyRoots.some((root) => normalizedKey.startsWith(root));
+
+    if (hasManagedKeyRoot) {
+      return true;
+    }
+
+    if (s3Uploader && record.s3Url) {
+      return s3Uploader.isManagedStoredUrl(record.s3Url);
+    }
+
+    return false;
+  };
 
   const handleFileRetention = async (filePath: string): Promise<void> => {
     try {
@@ -397,15 +422,24 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
         config.chatLog.mediaRetentionDays
       );
       const s3Uploader = s3Service.getUploader();
+      const expiredImageRecords = result.expiredImageRecords.filter((record) =>
+        isManagedMediaRecord(record, s3Uploader)
+      );
+      const expiredFileRecords = result.expiredFileRecords.filter((record) =>
+        isManagedMediaRecord(record, s3Uploader)
+      );
+      const expiredVideoRecords = result.expiredVideoRecords.filter((record) =>
+        isManagedMediaRecord(record, s3Uploader)
+      );
       const mediaKeys = [
-        ...result.expiredImageRecords.map((record) => record.s3Key),
-        ...result.expiredFileRecords.map((record) => record.s3Key),
-        ...result.expiredVideoRecords.map((record) => record.s3Key),
+        ...expiredImageRecords.map((record) => record.s3Key),
+        ...expiredFileRecords.map((record) => record.s3Key),
+        ...expiredVideoRecords.map((record) => record.s3Key),
       ];
 
-      let deletedImageRecords = result.deletedImageRecords;
-      let deletedFileRecords = result.deletedFileRecords;
-      let deletedVideoRecords = result.deletedVideoRecords;
+      let deletedImageRecords = config.chatLog.mediaRetentionDays > 0 ? 0 : result.deletedImageRecords;
+      let deletedFileRecords = config.chatLog.mediaRetentionDays > 0 ? 0 : result.deletedFileRecords;
+      let deletedVideoRecords = config.chatLog.mediaRetentionDays > 0 ? 0 : result.deletedVideoRecords;
       let deletableMediaObjectCount = 0;
       let deletedMediaObjectCount = 0;
       let skippedSharedMediaObjectCount = 0;
@@ -418,17 +452,17 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
           );
         } else {
           const expiredImageRecordIds = new Set(
-            result.expiredImageRecords
+            expiredImageRecords
               .map((record) => record.id)
               .filter((id): id is number => typeof id === 'number')
           );
           const expiredFileRecordIds = new Set(
-            result.expiredFileRecords
+            expiredFileRecords
               .map((record) => record.id)
               .filter((id): id is number => typeof id === 'number')
           );
           const expiredVideoRecordIds = new Set(
-            result.expiredVideoRecords
+            expiredVideoRecords
               .map((record) => record.id)
               .filter((id): id is number => typeof id === 'number')
           );
@@ -479,15 +513,15 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
 
           if (deletedKeySet.size > 0) {
             const mediaDeleteSummary = await dbOps.deleteMediaRecordsByIds({
-              imageRecordIds: result.expiredImageRecords
+              imageRecordIds: expiredImageRecords
                 .filter((record) => deletedKeySet.has(normalizeMediaKey(record.s3Key)))
                 .map((record) => record.id)
                 .filter((id): id is number => typeof id === 'number'),
-              fileRecordIds: result.expiredFileRecords
+              fileRecordIds: expiredFileRecords
                 .filter((record) => deletedKeySet.has(normalizeMediaKey(record.s3Key)))
                 .map((record) => record.id)
                 .filter((id): id is number => typeof id === 'number'),
-              videoRecordIds: result.expiredVideoRecords
+              videoRecordIds: expiredVideoRecords
                 .filter((record) => deletedKeySet.has(normalizeMediaKey(record.s3Key)))
                 .map((record) => record.id)
                 .filter((id): id is number => typeof id === 'number'),

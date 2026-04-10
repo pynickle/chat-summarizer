@@ -117,6 +117,16 @@ export function extendDatabase(ctx: Context) {
 export class DatabaseOperations {
   constructor(private ctx: Context) {}
 
+  private chunkArray<T>(items: T[], chunkSize: number): T[][] {
+    if (items.length === 0) return [];
+
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += chunkSize) {
+      chunks.push(items.slice(index, index + chunkSize));
+    }
+    return chunks;
+  }
+
   private getMediaRetentionCutoff(mediaRetentionDays: number): number {
     return Date.now() - mediaRetentionDays * 24 * 60 * 60 * 1000;
   }
@@ -524,22 +534,23 @@ export class DatabaseOperations {
     const imageRecordIds = input.imageRecordIds?.filter((id) => Number.isFinite(id)) || [];
     const fileRecordIds = input.fileRecordIds?.filter((id) => Number.isFinite(id)) || [];
     const videoRecordIds = input.videoRecordIds?.filter((id) => Number.isFinite(id)) || [];
+    const queryBatchSize = 200;
 
-    if (imageRecordIds.length > 0) {
+    for (const batch of this.chunkArray(imageRecordIds, queryBatchSize)) {
       await this.ctx.database.remove('image_records', {
-        id: { $in: imageRecordIds },
+        id: { $in: batch },
       });
     }
 
-    if (fileRecordIds.length > 0) {
+    for (const batch of this.chunkArray(fileRecordIds, queryBatchSize)) {
       await this.ctx.database.remove('file_records', {
-        id: { $in: fileRecordIds },
+        id: { $in: batch },
       });
     }
 
-    if (videoRecordIds.length > 0) {
+    for (const batch of this.chunkArray(videoRecordIds, queryBatchSize)) {
       await this.ctx.database.remove('video_records', {
-        id: { $in: videoRecordIds },
+        id: { $in: batch },
       });
     }
 
@@ -556,6 +567,7 @@ export class DatabaseOperations {
     videoRecords: VideoRecord[];
   }> {
     const uniqueKeys = Array.from(new Set(keys.map((key) => key.trim()).filter((key) => key.length > 0)));
+    const queryBatchSize = 200;
 
     if (uniqueKeys.length === 0) {
       return {
@@ -565,11 +577,21 @@ export class DatabaseOperations {
       };
     }
 
-    const [imageRecords, fileRecords, videoRecords] = await Promise.all([
-      this.ctx.database.get('image_records', { s3Key: { $in: uniqueKeys } }),
-      this.ctx.database.get('file_records', { s3Key: { $in: uniqueKeys } }),
-      this.ctx.database.get('video_records', { s3Key: { $in: uniqueKeys } }),
-    ]);
+    const imageRecords: ImageRecord[] = [];
+    const fileRecords: FileRecord[] = [];
+    const videoRecords: VideoRecord[] = [];
+
+    for (const batch of this.chunkArray(uniqueKeys, queryBatchSize)) {
+      const [imageBatch, fileBatch, videoBatch] = await Promise.all([
+        this.ctx.database.get('image_records', { s3Key: { $in: batch } }),
+        this.ctx.database.get('file_records', { s3Key: { $in: batch } }),
+        this.ctx.database.get('video_records', { s3Key: { $in: batch } }),
+      ]);
+
+      imageRecords.push(...imageBatch);
+      fileRecords.push(...fileBatch);
+      videoRecords.push(...videoBatch);
+    }
 
     return {
       imageRecords,

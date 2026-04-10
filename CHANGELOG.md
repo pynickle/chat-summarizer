@@ -1,3 +1,9 @@
+## [1.26.1](https://github.com/pynickle/chat-summarizer/compare/v1.26.0...v1.26.1) (2026-04-10)
+
+### 🐛 Bug Fixes
+
+* fix wasm sql error in s3 cleanup ([4918d1d](https://github.com/pynickle/chat-summarizer/commit/4918d1d9aaec4bfcd86449fafd52b49baa55958c))
+
 ## [1.26.0](https://github.com/pynickle/chat-summarizer/compare/v1.25.1...v1.26.0) (2026-04-10)
 
 ### ✨ Features

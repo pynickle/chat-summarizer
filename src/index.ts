@@ -97,6 +97,7 @@ export function apply(ctx: Context, config: Config) {
         s3Service.getUploader(),
         getStorageDir,
         getNextExecutionTime,
+        uploadRuntime.executeDatabaseCleanup,
         summaryRuntime.generateSummaryForRecord
       );
       commandHandler.registerCommands();

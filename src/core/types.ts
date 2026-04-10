@@ -185,6 +185,28 @@ export interface PluginStats {
   uploadedMessages: number;
 }
 
+export interface LocalFileCleanupSummary {
+  checkedFiles: number;
+  deletedFiles: number;
+}
+
+export interface DatabaseCleanupSummary {
+  success: boolean;
+  deletedChatRecords: number;
+  deletedImageRecords: number;
+  deletedFileRecords: number;
+  deletedVideoRecords: number;
+  expiredMediaObjectCount: number;
+  deletableMediaObjectCount: number;
+  deletedMediaObjectCount: number;
+  skippedSharedMediaObjectCount: number;
+  mediaCleanupEnabled: boolean;
+  s3UploaderAvailable: boolean;
+  localFileCleanup: LocalFileCleanupSummary;
+  s3DeletionError?: string;
+  error?: string;
+}
+
 // ========== AI 结构化输出类型 ==========
 
 // AI 输出的结构化 JSON

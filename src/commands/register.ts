@@ -11,6 +11,7 @@ import {
 import { handleMdTestCommand } from './mdtest-command';
 import { handleAnalysisCommand } from './analysis-command';
 import { handlePresignTestCommand } from './presign-test-command';
+import { handleCleanupCommand } from './cleanup-command';
 
 export function registerCommands(deps: CommandDeps): void {
   const { ctx } = deps;
@@ -109,5 +110,12 @@ export function registerCommands(deps: CommandDeps): void {
     .example('cs.test.presign 3600 - 生成有效期 1 小时的预签名链接')
     .action(async ({ session }, expires) => {
       await handlePresignTestCommand(deps, session, expires);
+    });
+
+  ctx
+    .command('cs.cleanup', '手动执行过期数据清理（仅管理员可用）')
+    .example('cs.cleanup - 按当前保留策略手动清理数据库、本地文件和 S3 媒体')
+    .action(async ({ session }) => {
+      await handleCleanupCommand(deps, session);
     });
 }

@@ -1,5 +1,5 @@
 import { Context, Session } from 'koishi';
-import { Config, ChatLogFileRecord, ChatRecord } from '../core/types';
+import { Config, ChatLogFileRecord, ChatRecord, DatabaseCleanupSummary } from '../core/types';
 import { DatabaseOperations } from '../data/database';
 import { LoggerService, MessageProcessorService, S3Service } from './services';
 import { SafeFileWriter } from '../data/file-writer';
@@ -32,7 +32,7 @@ export interface SummaryRuntime {
 export interface UploadRuntime {
   executeAutoUpload: () => Promise<void>;
   scheduleAutoUpload: () => void;
-  executeDatabaseCleanup: () => Promise<void>;
+  executeDatabaseCleanup: () => Promise<DatabaseCleanupSummary>;
   scheduleDbCleanup: () => void;
   clearUploadScheduler: () => void;
   clearCleanupScheduler: () => void;

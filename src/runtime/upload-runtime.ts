@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { DatabaseCleanupSummary, LocalFileCleanupSummary } from '../core/types';
 import { getCurrentTimeInUTC8, getDateStringInUTC8 } from '../core/utils';
 import { expandObjectKeyCandidates, normalizeObjectKeyForComparison } from '../storage/s3-object-ops';
 import { S3Uploader, UploadResult } from '../storage/s3-uploader';
@@ -314,16 +315,22 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
     }
   };
 
-  const executeLocalFileCleanup = async (): Promise<void> => {
+  const executeLocalFileCleanup = async (): Promise<LocalFileCleanupSummary> => {
     try {
       if (config.chatLog.retentionDays <= 0) {
-        return;
+        return {
+          checkedFiles: 0,
+          deletedFiles: 0,
+        };
       }
 
       const dataDir = getStorageDir('data');
       const files = await fs.readdir(dataDir).catch(() => []);
       if (files.length === 0) {
-        return;
+        return {
+          checkedFiles: 0,
+          deletedFiles: 0,
+        };
       }
 
       const retentionDate = getCurrentTimeInUTC8();
@@ -365,12 +372,21 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
       } else if (config.debug) {
         logger.info(`本地文件清理完成：检查 ${checkedCount} 个文件，无过期文件需要删除`);
       }
+
+      return {
+        checkedFiles: checkedCount,
+        deletedFiles: deletedCount,
+      };
     } catch (error: any) {
       logger.error('执行本地文件清理时发生错误', error);
+      return {
+        checkedFiles: 0,
+        deletedFiles: 0,
+      };
     }
   };
 
-  const executeDatabaseCleanup = async (): Promise<void> => {
+  const executeDatabaseCleanup = async (): Promise<DatabaseCleanupSummary> => {
     try {
       if (config.debug) {
         logger.info('开始执行数据库清理');
@@ -390,6 +406,10 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
       let deletedImageRecords = result.deletedImageRecords;
       let deletedFileRecords = result.deletedFileRecords;
       let deletedVideoRecords = result.deletedVideoRecords;
+      let deletableMediaObjectCount = 0;
+      let deletedMediaObjectCount = 0;
+      let skippedSharedMediaObjectCount = 0;
+      let s3DeletionError: string | undefined;
 
       if (config.chatLog.mediaRetentionDays > 0 && mediaKeys.length > 0) {
         if (!s3Uploader) {
@@ -448,11 +468,14 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
               })
             )
           );
+          deletableMediaObjectCount = deletableKeys.length;
+          skippedSharedMediaObjectCount = uniqueMediaKeys.length - deletableKeys.length;
 
           const deleteResult = await s3Uploader.deleteObjects(deletableKeys);
           const deletedKeySet = new Set(
             (deleteResult.deletedKeys || []).map((key) => normalizeMediaKey(key))
           );
+          deletedMediaObjectCount = deletedKeySet.size;
 
           if (deletedKeySet.size > 0) {
             const mediaDeleteSummary = await dbOps.deleteMediaRecordsByIds({
@@ -481,12 +504,12 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
           }
 
           if (deleteResult.error) {
+            s3DeletionError = deleteResult.error;
             logger.warn(`媒体文件清理存在未完成项：${deleteResult.error}`);
           }
 
-          const skippedSharedKeys = uniqueMediaKeys.length - deletableKeys.length;
-          if (config.debug && skippedSharedKeys > 0) {
-            logger.info(`跳过 ${skippedSharedKeys} 个仍被未过期记录引用的媒体对象`);
+          if (config.debug && skippedSharedMediaObjectCount > 0) {
+            logger.info(`跳过 ${skippedSharedMediaObjectCount} 个仍被未过期记录引用的媒体对象`);
           }
         }
       } else if (config.chatLog.mediaRetentionDays > 0) {
@@ -509,9 +532,45 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
         logger.info('数据库清理完成：没有过期记录需要清理');
       }
 
-      await executeLocalFileCleanup();
+      const localFileCleanup = await executeLocalFileCleanup();
+
+      return {
+        success: true,
+        deletedChatRecords: result.deletedChatRecords,
+        deletedImageRecords,
+        deletedFileRecords,
+        deletedVideoRecords,
+        expiredMediaObjectCount: Array.from(
+          new Set(mediaKeys.map((key) => key.trim()).filter((key) => key.length > 0))
+        ).length,
+        deletableMediaObjectCount,
+        deletedMediaObjectCount,
+        skippedSharedMediaObjectCount,
+        mediaCleanupEnabled: config.chatLog.mediaRetentionDays > 0,
+        s3UploaderAvailable: Boolean(s3Uploader),
+        localFileCleanup,
+        s3DeletionError,
+      };
     } catch (error: any) {
       logger.error('执行数据库清理时发生错误', error);
+      return {
+        success: false,
+        deletedChatRecords: 0,
+        deletedImageRecords: 0,
+        deletedFileRecords: 0,
+        deletedVideoRecords: 0,
+        expiredMediaObjectCount: 0,
+        deletableMediaObjectCount: 0,
+        deletedMediaObjectCount: 0,
+        skippedSharedMediaObjectCount: 0,
+        mediaCleanupEnabled: config.chatLog.mediaRetentionDays > 0,
+        s3UploaderAvailable: Boolean(s3Service.getUploader()),
+        localFileCleanup: {
+          checkedFiles: 0,
+          deletedFiles: 0,
+        },
+        error: error?.message || '未知错误',
+      };
     }
   };
 

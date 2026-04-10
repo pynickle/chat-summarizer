@@ -19,6 +19,7 @@ export class CommandHandler {
     private s3Uploader: S3Uploader | null,
     private getStorageDir: (subDir: string) => string,
     private getNextExecutionTime: (targetTime: string) => Date,
+    private runDatabaseCleanup: CommandDeps['runDatabaseCleanup'],
     private generateSummaryForRecord: (
       record: ChatLogFileRecord,
       skipPush?: boolean,
@@ -36,6 +37,7 @@ export class CommandHandler {
       s3Uploader,
       getStorageDir,
       getNextExecutionTime,
+      runDatabaseCleanup,
       generateSummaryForRecord,
       exportManager,
       aiService,

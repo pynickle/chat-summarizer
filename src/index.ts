@@ -130,13 +130,25 @@ export function apply(ctx: Context, config: Config) {
           const summaryTime = groupConfig.summaryTime || defaultSummaryTime;
           const pushEnabled = groupConfig.pushEnabled !== false;
           const pushTime = groupConfig.pushTime || groupConfig.summaryTime || defaultPushTime;
+          const smartPushDelayEnabled =
+            groupConfig.smartPushDelayEnabled !== undefined
+              ? groupConfig.smartPushDelayEnabled
+              : config.ai.smartPushDelayEnabled === true;
+          const smartPushDelayTime =
+            groupConfig.smartPushDelayTime || config.ai.smartPushDelayTime || '23:00';
+          const smartPushDelayWindowMinutes =
+            groupConfig.smartPushDelayWindowMinutes ?? config.ai.smartPushDelayWindowMinutes ?? 3;
+          const smartPushDelayMessageThreshold =
+            groupConfig.smartPushDelayMessageThreshold ??
+            config.ai.smartPushDelayMessageThreshold ??
+            50;
           const monitorEnabled = groupConfig.monitorEnabled !== false;
           const groupName = groupConfig.name
             ? `${groupConfig.name}(${groupConfig.groupId})`
             : groupConfig.groupId;
 
           logger.info(
-            `群组 ${groupName}: 监控=${monitorEnabled}, 总结=${summaryEnabled}@${summaryTime}, 推送=${pushEnabled}@${pushTime}`
+            `群组 ${groupName}: 监控=${monitorEnabled}, 总结=${summaryEnabled}@${summaryTime}, 推送=${pushEnabled}@${pushTime}, 智能延迟=${smartPushDelayEnabled ? `${smartPushDelayTime}(${smartPushDelayWindowMinutes}分>${smartPushDelayMessageThreshold}条)` : '关闭'}`
           );
         }
       } else {

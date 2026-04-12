@@ -8,6 +8,10 @@ export type EffectiveGroupConfig = {
   summaryTime: string;
   pushEnabled: boolean;
   pushTime: string;
+  smartPushDelayEnabled: boolean;
+  smartPushDelayTime: string;
+  smartPushDelayWindowMinutes: number;
+  smartPushDelayMessageThreshold: number;
   pushToSelf: boolean;
   forwardGroups: GroupConfig['forwardGroups'];
   systemPrompt?: string;
@@ -20,6 +24,7 @@ export function getEffectiveGroupConfig(
 ): EffectiveGroupConfig {
   const defaultSummaryTime = config.ai.defaultSummaryTime || '03:00';
   const defaultPushTime = config.ai.defaultPushTime || defaultSummaryTime;
+  const smartPushDelayTime = config.ai.smartPushDelayTime || '23:00';
 
   return {
     groupId: groupConfig.groupId,
@@ -30,6 +35,15 @@ export function getEffectiveGroupConfig(
     summaryTime: groupConfig.summaryTime || defaultSummaryTime,
     pushEnabled: groupConfig.pushEnabled !== false,
     pushTime: groupConfig.pushTime || groupConfig.summaryTime || defaultPushTime,
+    smartPushDelayEnabled:
+      groupConfig.smartPushDelayEnabled !== undefined
+        ? groupConfig.smartPushDelayEnabled
+        : config.ai.smartPushDelayEnabled === true,
+    smartPushDelayTime: groupConfig.smartPushDelayTime || smartPushDelayTime,
+    smartPushDelayWindowMinutes:
+      groupConfig.smartPushDelayWindowMinutes ?? config.ai.smartPushDelayWindowMinutes ?? 3,
+    smartPushDelayMessageThreshold:
+      groupConfig.smartPushDelayMessageThreshold ?? config.ai.smartPushDelayMessageThreshold ?? 50,
     pushToSelf: groupConfig.pushToSelf !== false,
     forwardGroups: groupConfig.forwardGroups || [],
     systemPrompt: groupConfig.systemPrompt,

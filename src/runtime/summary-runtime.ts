@@ -2,7 +2,7 @@ import axios from 'axios';
 import { AIService, StructuredSummaryGenerationError } from '../ai/ai-service';
 import { ChatLogFileRecord, DailyReport } from '../core/types';
 import { extractHttpErrorContext, sanitizeUrlForLog } from '../core/error-utils';
-import { getCurrentTimeInUTC8, getDateStringInUTC8 } from '../core/utils';
+import { createTimeInUTC8, getCurrentTimeInUTC8, getDateStringInUTC8 } from '../core/utils';
 import { StatisticsService } from '../data/statistics';
 import { CardRenderer } from '../rendering/card-renderer';
 import { RuntimeDeps, SummaryRuntime } from './plugin-types';
@@ -13,6 +13,7 @@ import { createSummaryPushService } from './summary-push';
 export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
   const { ctx, config, logger, dbOps, s3Service } = deps;
   const schedulers: Map<string, NodeJS.Timeout> = new Map();
+  const delayedPushSchedulers: Map<string, NodeJS.Timeout> = new Map();
   const activeSummaryTasks: Map<string, Promise<string | undefined>> = new Map();
   const activePushTasks: Map<string, Promise<void>> = new Map();
   const pushedSummaryKeys: Set<string> = new Set();
@@ -44,6 +45,10 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
 
   const getPushedSummaryKey = (date: string, groupId: string, imageUrl: string): string => {
     return `${date}:${groupId}:${imageUrl}`;
+  };
+
+  const getDelayedPushKey = (date: string, groupId: string): string => {
+    return `delayed:${date}:${groupId}`;
   };
 
   const runExclusiveTask = <T>(
@@ -390,6 +395,48 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
           return;
         }
 
+        if (effectiveConfig.smartPushDelayEnabled) {
+          const now = getCurrentTimeInUTC8();
+          const originalPushTime = createTimeInUTC8(now, effectiveConfig.pushTime);
+          const extraPushTime = createTimeInUTC8(now, effectiveConfig.smartPushDelayTime);
+          const isOriginalWindow = Math.abs(now.getTime() - originalPushTime.getTime()) < 60 * 1000;
+          const delayKey = getDelayedPushKey(dateStr, groupId);
+
+          if (isOriginalWindow && extraPushTime > now) {
+            const windowStart = new Date(originalPushTime.getTime());
+            windowStart.setMinutes(
+              windowStart.getMinutes() - effectiveConfig.smartPushDelayWindowMinutes
+            );
+
+            const messageCount = await dbOps.countMessagesByGuildAndTimeRange(
+              groupId,
+              windowStart.getTime(),
+              originalPushTime.getTime()
+            );
+
+            if (messageCount > effectiveConfig.smartPushDelayMessageThreshold) {
+              if (delayedPushSchedulers.has(delayKey)) {
+                if (config.debug) {
+                  logger.info(`群组 ${groupId} 的延迟推送已安排，跳过重复创建`);
+                }
+                return;
+              }
+
+              const delay = extraPushTime.getTime() - now.getTime();
+              const timeout = setTimeout(async () => {
+                delayedPushSchedulers.delete(delayKey);
+                await executeGroupPush(groupId);
+              }, delay);
+              delayedPushSchedulers.set(delayKey, timeout);
+
+              logger.info(
+                `群组 ${groupId} 在推送前 ${effectiveConfig.smartPushDelayWindowMinutes} 分钟内消息 ${messageCount} 条，超过阈值 ${effectiveConfig.smartPushDelayMessageThreshold}，已延迟到 ${effectiveConfig.smartPushDelayTime} 推送`
+              );
+              return;
+            }
+          }
+        }
+
         let pushImageUrl = summaryImageUrl;
         const s3Uploader = s3Service.getUploader();
         if (s3Uploader) {
@@ -467,6 +514,11 @@ export function createSummaryRuntime(deps: RuntimeDeps): SummaryRuntime {
       }
     }
     schedulers.clear();
+
+    for (const timeout of delayedPushSchedulers.values()) {
+      clearTimeout(timeout);
+    }
+    delayedPushSchedulers.clear();
   };
 
   const getScheduleTimePoints = (): Map<

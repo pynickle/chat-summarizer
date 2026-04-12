@@ -333,6 +333,19 @@ export class DatabaseOperations {
     return record?.summaryImageUrl || null;
   }
 
+  async countMessagesByGuildAndTimeRange(
+    guildId: string | undefined,
+    startTime: number,
+    endTime: number
+  ): Promise<number> {
+    const records = await this.ctx.database.get('chat_records', {
+      guildId,
+      timestamp: { $gte: startTime, $lt: endTime },
+    });
+
+    return records.length;
+  }
+
   // 获取指定日期范围内有 AI 总结的记录
   async getRecordsWithSummary(startDate: string, endDate: string): Promise<ChatLogFileRecord[]> {
     const records = await this.ctx.database.get('chat_log_files', {

@@ -7,17 +7,14 @@ import {
   LocalFileCleanupSummary,
   VideoRecord,
 } from '../core/types';
-import { getCurrentTimeInUTC8, getDateStringInUTC8 } from '../core/utils';
+import { createTimeInUTC8, getCurrentTimeInUTC8, getDateStringInUTC8 } from '../core/utils';
 import { expandObjectKeyCandidates, normalizeObjectKeyForComparison } from '../storage/s3-object-ops';
 import { S3Uploader, UploadResult } from '../storage/s3-uploader';
 import { RuntimeDeps, UploadRuntime } from './plugin-types';
 
 export function getNextExecutionTime(targetTime: string): Date {
   const now = getCurrentTimeInUTC8();
-  const [hours, minutes] = targetTime.split(':').map(Number);
-
-  const next = new Date(now);
-  next.setHours(hours, minutes, 0, 0);
+  const next = createTimeInUTC8(now, targetTime);
 
   if (next <= now) {
     next.setDate(next.getDate() + 1);

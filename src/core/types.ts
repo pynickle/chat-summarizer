@@ -19,6 +19,10 @@ export interface GroupConfig {
   // 推送配置
   pushEnabled?: boolean; // 是否启用推送（默认 true）
   pushTime?: string; // 推送时间 HH:mm（默认=summaryTime）
+  smartPushDelayEnabled?: boolean;
+  smartPushDelayTime?: string;
+  smartPushDelayWindowMinutes?: number;
+  smartPushDelayMessageThreshold?: number;
   pushToSelf?: boolean; // 推回本群（默认 true）
   forwardGroups?: ForwardTarget[]; // 额外转发群组
 
@@ -93,6 +97,10 @@ export interface Config {
     // 全局默认时间（群组未配置时使用）
     defaultSummaryTime?: string; // 默认总结生成时间 HH:mm（默认 "03:00"）
     defaultPushTime?: string; // 默认推送时间 HH:mm（默认与 summaryTime 相同）
+    smartPushDelayEnabled?: boolean;
+    smartPushDelayTime?: string;
+    smartPushDelayWindowMinutes?: number;
+    smartPushDelayMessageThreshold?: number;
   };
 
   // 调试配置

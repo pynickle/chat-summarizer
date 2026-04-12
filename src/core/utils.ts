@@ -63,6 +63,13 @@ export const getCurrentTimeInUTC8 = (): Date => {
   return utc8Time;
 };
 
+export const createTimeInUTC8 = (baseDate: Date, time: string): Date => {
+  const [hours, minutes] = time.split(':').map(Number);
+  const next = new Date(baseDate);
+  next.setHours(hours, minutes, 0, 0);
+  return next;
+};
+
 /**
  * 统一的错误处理器
  */

@@ -54,6 +54,19 @@ export const ConfigSchema: Schema<Config> = Schema.object({
         pushTime: Schema.string()
           .description('推送时间 HH:mm（默认与 summaryTime 相同）')
           .pattern(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/),
+        smartPushDelayEnabled: Schema.boolean()
+          .description('是否启用智能延迟推送（默认继承全局配置）'),
+        smartPushDelayTime: Schema.string()
+          .description('触发智能延迟后的额外推送时间 HH:mm（默认继承全局配置）')
+          .pattern(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/),
+        smartPushDelayWindowMinutes: Schema.number()
+          .description('检查推送前活跃消息的时间窗口（分钟，默认继承全局配置）')
+          .min(1)
+          .max(60),
+        smartPushDelayMessageThreshold: Schema.number()
+          .description('触发智能延迟的消息阈值（默认继承全局配置）')
+          .min(1)
+          .max(1000),
         pushToSelf: Schema.boolean().description('推送回本群（默认 true）').default(true),
         forwardGroups: Schema.array(
           Schema.object({
@@ -166,6 +179,23 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     defaultPushTime: Schema.string()
       .description('默认推送时间（HH:mm 格式，留空则与 defaultSummaryTime 相同）')
       .pattern(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/),
+    smartPushDelayEnabled: Schema.boolean()
+      .description('是否启用智能延迟推送（满足条件时改为额外时间发送）')
+      .default(false),
+    smartPushDelayTime: Schema.string()
+      .description('触发智能延迟后的额外推送时间 HH:mm')
+      .pattern(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/)
+      .default('23:00'),
+    smartPushDelayWindowMinutes: Schema.number()
+      .description('检查推送前活跃消息的时间窗口（分钟）')
+      .min(1)
+      .max(60)
+      .default(3),
+    smartPushDelayMessageThreshold: Schema.number()
+      .description('触发智能延迟的消息阈值')
+      .min(1)
+      .max(1000)
+      .default(50),
   }).description('AI 总结配置'),
 
   debug: Schema.boolean().description('是否启用调试模式').default(false),

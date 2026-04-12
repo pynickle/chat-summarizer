@@ -43,6 +43,14 @@ export async function handleStatusCommand(deps: CommandDeps): Promise<string> {
       else if (group.summaryTime) parts.push(`总结@${group.summaryTime}`);
       if (group.pushEnabled === false) parts.push('推送关');
       else if (group.pushTime) parts.push(`推送@${group.pushTime}`);
+      if (group.smartPushDelayEnabled) {
+        const delayTime = group.smartPushDelayTime || config.ai.smartPushDelayTime || '23:00';
+        const delayWindow =
+          group.smartPushDelayWindowMinutes ?? config.ai.smartPushDelayWindowMinutes ?? 3;
+        const delayThreshold =
+          group.smartPushDelayMessageThreshold ?? config.ai.smartPushDelayMessageThreshold ?? 50;
+        parts.push(`智能延迟@${delayTime}(${delayWindow}分>${delayThreshold}条)`);
+      }
       if (group.pushToSelf === false) parts.push('不推本群');
       if (group.forwardGroups && group.forwardGroups.length > 0) {
         parts.push(`转发到${group.forwardGroups.length}群`);

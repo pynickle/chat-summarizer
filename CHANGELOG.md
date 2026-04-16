@@ -1,3 +1,9 @@
+## [1.27.1](https://github.com/pynickle/chat-summarizer/compare/v1.27.0...v1.27.1) (2026-04-16)
+
+### 🔧 Miscellaneous Changes
+
+* update deps ([6a793c9](https://github.com/pynickle/chat-summarizer/commit/6a793c9541a779376415b422dad036a7e86c7e69))
+
 ## [1.27.0](https://github.com/pynickle/chat-summarizer/compare/v1.26.1...v1.27.0) (2026-04-16)
 
 ### ✨ Features

@@ -49,7 +49,7 @@
     "typescript": "^6.0.2"
   },
   "peerDependencies": {
-    "koishi": "^4.18.0"
+    "koishi": "^4.18.11"
   },
   "koishi": {
     "description": {

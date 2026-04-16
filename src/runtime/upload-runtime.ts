@@ -8,7 +8,10 @@ import {
   VideoRecord,
 } from '../core/types';
 import { createTimeInUTC8, getCurrentTimeInUTC8, getDateStringInUTC8 } from '../core/utils';
-import { expandObjectKeyCandidates, normalizeObjectKeyForComparison } from '../storage/s3-object-ops';
+import {
+  expandObjectKeyCandidates,
+  normalizeObjectKeyForComparison,
+} from '../storage/s3-object-ops';
 import { S3Uploader, UploadResult } from '../storage/s3-uploader';
 import { RuntimeDeps, UploadRuntime } from './plugin-types';
 
@@ -434,9 +437,12 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
         ...expiredVideoRecords.map((record) => record.s3Key),
       ];
 
-      let deletedImageRecords = config.chatLog.mediaRetentionDays > 0 ? 0 : result.deletedImageRecords;
-      let deletedFileRecords = config.chatLog.mediaRetentionDays > 0 ? 0 : result.deletedFileRecords;
-      let deletedVideoRecords = config.chatLog.mediaRetentionDays > 0 ? 0 : result.deletedVideoRecords;
+      let deletedImageRecords =
+        config.chatLog.mediaRetentionDays > 0 ? 0 : result.deletedImageRecords;
+      let deletedFileRecords =
+        config.chatLog.mediaRetentionDays > 0 ? 0 : result.deletedFileRecords;
+      let deletedVideoRecords =
+        config.chatLog.mediaRetentionDays > 0 ? 0 : result.deletedVideoRecords;
       let deletableMediaObjectCount = 0;
       let deletedMediaObjectCount = 0;
       let skippedSharedMediaObjectCount = 0;
@@ -464,7 +470,8 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
               .filter((id): id is number => typeof id === 'number')
           );
 
-          const normalizeMediaKey = (key: string) => normalizeObjectKeyForComparison(config.s3, key);
+          const normalizeMediaKey = (key: string) =>
+            normalizeObjectKeyForComparison(config.s3, key);
           const uniqueMediaKeys = Array.from(
             new Set(mediaKeys.map((key) => key.trim()).filter((key) => key.length > 0))
           );
@@ -495,7 +502,9 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
                     !expiredVideoRecordIds.has(record.id)
                 );
 
-                return !referencedByActiveImage && !referencedByActiveFile && !referencedByActiveVideo;
+                return (
+                  !referencedByActiveImage && !referencedByActiveFile && !referencedByActiveVideo
+                );
               })
             )
           );
@@ -550,10 +559,7 @@ export function createUploadRuntime(deps: RuntimeDeps): UploadRuntime {
       }
 
       const totalDeleted =
-        result.deletedChatRecords +
-        deletedImageRecords +
-        deletedFileRecords +
-        deletedVideoRecords;
+        result.deletedChatRecords + deletedImageRecords + deletedFileRecords + deletedVideoRecords;
 
       if (totalDeleted > 0) {
         logger.info(

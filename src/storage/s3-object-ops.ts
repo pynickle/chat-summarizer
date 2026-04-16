@@ -52,7 +52,9 @@ export function expandObjectKeyCandidates(config: ObjectKeyConfig, key: string):
   const resolvedKey = resolveObjectKey(config, rawKey);
   const normalizedKey = normalizeObjectKeyForComparison(config, rawKey);
 
-  return Array.from(new Set([rawKey, resolvedKey, normalizedKey].filter((value) => value.length > 0)));
+  return Array.from(
+    new Set([rawKey, resolvedKey, normalizedKey].filter((value) => value.length > 0))
+  );
 }
 
 export function generatePublicUrl(config: S3Config, key: string): string {

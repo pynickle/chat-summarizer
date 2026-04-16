@@ -440,7 +440,10 @@ export class DatabaseOperations {
   }
 
   // 清理过期的数据库记录
-  async cleanupExpiredRecords(retentionHours: number, mediaRetentionDays: number): Promise<{
+  async cleanupExpiredRecords(
+    retentionHours: number,
+    mediaRetentionDays: number
+  ): Promise<{
     deletedChatRecords: number;
     deletedImageRecords: number;
     deletedFileRecords: number;
@@ -579,7 +582,9 @@ export class DatabaseOperations {
     fileRecords: FileRecord[];
     videoRecords: VideoRecord[];
   }> {
-    const uniqueKeys = Array.from(new Set(keys.map((key) => key.trim()).filter((key) => key.length > 0)));
+    const uniqueKeys = Array.from(
+      new Set(keys.map((key) => key.trim()).filter((key) => key.length > 0))
+    );
     const queryBatchSize = 200;
 
     if (uniqueKeys.length === 0) {

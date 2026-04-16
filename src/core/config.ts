@@ -62,8 +62,9 @@ export const ConfigSchema: Schema<Config> = Schema.object({
         pushTime: Schema.string()
           .description('推送时间 HH:mm（默认与 summaryTime 相同）')
           .pattern(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/),
-        smartPushDelayEnabled: Schema.boolean()
-          .description('是否启用智能延迟推送（默认继承全局配置）'),
+        smartPushDelayEnabled: Schema.boolean().description(
+          '是否启用智能延迟推送（默认继承全局配置）'
+        ),
         smartPushDelayTime: Schema.string()
           .description('触发智能延迟后的额外推送时间 HH:mm（默认继承全局配置）')
           .pattern(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/),

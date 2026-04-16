@@ -1,3 +1,14 @@
+## [1.27.0](https://github.com/pynickle/chat-summarizer/compare/v1.26.1...v1.27.0) (2026-04-16)
+
+### ✨ Features
+
+* add intelligent delay ([be93614](https://github.com/pynickle/chat-summarizer/commit/be936147f70cad7d605e14b2ee9b14bada467795))
+
+### 🔧 Miscellaneous Changes
+
+* update deps ([a091f0a](https://github.com/pynickle/chat-summarizer/commit/a091f0a95fce184811dca9d2ce4e727d2cafe8f0))
+* update workflow ([5102bbc](https://github.com/pynickle/chat-summarizer/commit/5102bbc81f629f258e9058599e79982d02aafed3))
+
 ## [1.26.1](https://github.com/pynickle/chat-summarizer/compare/v1.26.0...v1.26.1) (2026-04-10)
 
 ### 🐛 Bug Fixes
